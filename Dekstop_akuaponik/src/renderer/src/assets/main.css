@@ -1,0 +1,307 @@
+/* Import Google Fonts — must precede all other statements */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =====================================================
+   AquaPhonik Desktop — Futuristic Glassmorphism Theme
+   ===================================================== */
+
+@layer base {
+  :root {
+    --color-aqua-glow: rgba(23, 181, 122, 0.4);
+    --color-ocean-glow: rgba(54, 150, 252, 0.4);
+    --color-neon-green: #54ff33;
+    --color-neon-cyan: #33eeff;
+    --color-neon-amber: #ffbd33;
+    --color-neon-red: #ff4d79;
+    --glass-bg: rgba(255, 255, 255, 0.08);
+    --glass-border: rgba(255, 255, 255, 0.15);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+
+  html {
+    @apply font-sans antialiased;
+  }
+
+  body {
+    @apply bg-slate-950 text-white m-0 p-0 overflow-hidden;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Custom scrollbar — Futuristic */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-white/20 rounded-full;
+    transition: background 0.2s;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-white/40;
+  }
+}
+
+@layer components {
+  /* ===== Glassmorphism Cards ===== */
+  .glass-card {
+    @apply bg-white/[0.06] backdrop-blur-xl border border-white/[0.1] rounded-2xl;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition: all 0.3s ease;
+  }
+
+  .glass-card-hover {
+    @apply glass-card cursor-pointer;
+  }
+
+  .glass-card-hover:hover {
+    @apply border-white/20 bg-white/[0.1];
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 0 30px rgba(23, 181, 122, 0.08);
+    transform: translateY(-3px);
+  }
+
+  /* ===== Sensor value display ===== */
+  .sensor-value {
+    @apply text-4xl font-bold tracking-tight;
+    background: linear-gradient(135deg, #39ff14, #00e5ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .sensor-value-sm {
+    @apply text-2xl font-bold tracking-tight;
+    background: linear-gradient(135deg, #39ff14, #00e5ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ===== Status indicator dots ===== */
+  .status-dot {
+    @apply w-2.5 h-2.5 rounded-full;
+  }
+
+  .status-dot-connected {
+    @apply status-dot bg-emerald-400;
+    box-shadow: 0 0 12px rgba(52, 211, 153, 0.8), 0 0 4px rgba(52, 211, 153, 0.4);
+    animation: neonPulse 2s ease-in-out infinite;
+  }
+
+  .status-dot-disconnected {
+    @apply status-dot bg-red-400;
+    box-shadow: 0 0 8px rgba(248, 113, 113, 0.5);
+  }
+
+  /* ===== Futuristic Toggle Switch ===== */
+  .toggle-switch {
+    @apply relative w-16 h-8 rounded-full cursor-pointer transition-all duration-500;
+    border: 1.5px solid rgba(255, 255, 255, 0.15);
+  }
+
+  .toggle-switch-on {
+    background: linear-gradient(135deg, rgba(23, 181, 122, 0.6), rgba(0, 229, 255, 0.4));
+    border-color: rgba(57, 255, 20, 0.4);
+    box-shadow: 0 0 20px rgba(57, 255, 20, 0.3), inset 0 0 10px rgba(57, 255, 20, 0.1);
+  }
+
+  .toggle-switch-off {
+    @apply bg-white/10;
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .toggle-switch-knob {
+    @apply absolute top-1 w-6 h-6 rounded-full shadow-lg transition-all duration-500;
+    background: linear-gradient(135deg, #ffffff, #e0e0e0);
+  }
+
+  .toggle-switch-on .toggle-switch-knob {
+    box-shadow: 0 0 12px rgba(57, 255, 20, 0.6), 0 2px 8px rgba(0, 0, 0, 0.3);
+    background: linear-gradient(135deg, #39ff14, #00e5ff);
+  }
+
+  /* ===== Navigation ===== */
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-white/50 font-medium
+           transition-all duration-300 cursor-pointer;
+  }
+
+  .nav-item:hover {
+    @apply text-white/80 bg-white/[0.06];
+  }
+
+  .nav-item-active {
+    @apply text-white bg-white/[0.1] border border-white/[0.15];
+    box-shadow: 0 0 20px rgba(23, 181, 122, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .nav-item-active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 60%;
+    background: linear-gradient(180deg, #39ff14, #00e5ff);
+    border-radius: 0 4px 4px 0;
+    box-shadow: 0 0 8px rgba(57, 255, 20, 0.6);
+  }
+
+  /* ===== Gradient text ===== */
+  .text-gradient {
+    background: linear-gradient(135deg, #39ff14 0%, #00e5ff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ===== Glow button ===== */
+  .btn-glow {
+    @apply px-6 py-2.5 rounded-xl font-semibold text-white transition-all duration-300;
+    background: linear-gradient(135deg, #17b57a 0%, #0b9163 100%);
+    box-shadow: 0 4px 20px rgba(23, 181, 122, 0.4);
+  }
+
+  .btn-glow:hover {
+    box-shadow: 0 4px 30px rgba(23, 181, 122, 0.6);
+    transform: translateY(-2px);
+  }
+
+  .btn-glow:active {
+    transform: translateY(0);
+  }
+
+  /* ===== Chart container ===== */
+  .chart-container {
+    @apply glass-card p-6;
+    position: relative;
+  }
+
+  /* ===== Floating sensor badge ===== */
+  .sensor-badge {
+    @apply relative;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(20px);
+    border: 1.5px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition: all 0.4s ease;
+  }
+
+  .sensor-badge:hover {
+    border-color: rgba(255, 255, 255, 0.25);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 0 30px var(--badge-glow, rgba(23, 181, 122, 0.2));
+    transform: translateY(-4px);
+  }
+
+  /* ===== IoT connecting line ===== */
+  .iot-line {
+    position: absolute;
+    height: 1.5px;
+    background: linear-gradient(90deg, rgba(57, 255, 20, 0.4), rgba(0, 229, 255, 0.1));
+    box-shadow: 0 0 6px rgba(57, 255, 20, 0.2);
+    transform-origin: left center;
+    animation: iotPulse 3s ease-in-out infinite;
+  }
+}
+
+/* =====================================================
+   Animations
+   ===================================================== */
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes neonPulse {
+  0%, 100% { 
+    box-shadow: 0 0 8px rgba(52, 211, 153, 0.6), 0 0 4px rgba(52, 211, 153, 0.3);
+    opacity: 1;
+  }
+  50% { 
+    box-shadow: 0 0 16px rgba(52, 211, 153, 0.9), 0 0 8px rgba(52, 211, 153, 0.5);
+    opacity: 0.85;
+  }
+}
+
+@keyframes iotPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes glowRotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes dataFlow {
+  0% { transform: translateX(-100%); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateX(100%); opacity: 0; }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-float-delay-1 {
+  animation: float 6s ease-in-out 0.5s infinite;
+}
+
+.animate-float-delay-2 {
+  animation: float 6s ease-in-out 1s infinite;
+}
+
+.animate-float-delay-3 {
+  animation: float 6s ease-in-out 1.5s infinite;
+}
+
+/* Page transition */
+.page-enter-active,
+.page-leave-active {
+  transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(15px) scale(0.98);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-15px) scale(0.98);
+}
+
+/* Sidebar transition */
+.sidebar-enter-active,
+.sidebar-leave-active {
+  transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.sidebar-enter-from,
+.sidebar-leave-to {
+  transform: translateY(100%);
+  opacity: 0;
+}
+
+/* ===== ECharts gauge custom overrides ===== */
+.echarts-gauge-container {
+  filter: drop-shadow(0 0 10px rgba(0, 229, 255, 0.15));
+}

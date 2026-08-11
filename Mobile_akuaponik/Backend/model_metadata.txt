@@ -1,0 +1,33 @@
+📊 INFORMASI FITUR
+------------------------------------------------------------
+Jumlah Fitur: 4
+Nama Fitur: DO(mg/l), pH(ph_units), TDS(ppm), Temp(cel)
+
+📊 INFORMASI DATASET
+------------------------------------------------------------
+Total Data (Original)                   : 5000 sampel
+Total Data Training (Balanced)          : 5634 sampel
+Training Set                            : 5634 sampel
+Testing Set (data asli, tidak di-SMOTE) : 1000 sampel
+
+
+🔍 PARAMETER MODEL
+------------------------------------------------------------
+Algoritma       : K-Nearest Neighbors (KNN)
+Nilai K Optimal : 3
+Weights         : uniform
+Metric          : euclidean
+
+📈 PERFORMA MODEL
+------------------------------------------------------------
+Best CV Accuracy    : 0.9485 (94.85%)
+Test Accuracy       : 0.9260 (92.60%)
+Weighted F1-Score   : 0.9272
+Macro F1-Score      : 0.8796
+
+📊 CONFUSION MATRIX
+------------------------------------------------------------
+Actual\Predicted     ideal    normal    bahaya
+ideal               34         4         0
+normal              16       440        13
+bahaya               0        41       452
