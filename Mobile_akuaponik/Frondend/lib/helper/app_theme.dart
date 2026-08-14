@@ -3,11 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   // ------------------- BRAND -------------------
-  // Deep botanical green (the leaf) — replaces the old flat SaaS teal.
   static const Color primaryGreen = Color(0xFF2F6B4F);
-  // Fresh sprout green — secondary brand accent.
   static const Color secondaryGreen = Color(0xFF5FBF88);
-  // Deepest accent, used for pressed states / dark-on-dark contrast.
   static const Color accentGreen = Color(0xFF1F4D3A);
 
   // The fish half of the logo — an accent the old palette never used.
@@ -36,6 +33,15 @@ class AppTheme {
   static const Color tdsColor = paramTDS;
   static const Color doColor = paramDO;
 
+  // ------------------- SENSOR PARAMETERS (Data Desktop — 11 parameter) -------------------
+  static const Color paramWaterLevel = Color(0xFF3D6FA5); // Level Air
+  static const Color paramTurbidity = Color(0xFF8B6FB0); // Kekeruhan
+  static const Color paramAirTemp = Color(0xFFC96A56); // Suhu Udara
+  static const Color paramHumidity = Color(0xFF3FA0AE); // Kelembaban
+  static const Color paramCO2 = Color(0xFF3F9E76); // CO2
+  static const Color paramECO2 = Color(0xFF9C9142); // eCO2
+  static const Color paramTVOC = Color(0xFFA9673D); // TVOC
+
   // ------------------- SIGNATURE MOTIF -------------------
   static const LinearGradient currentGradient = LinearGradient(
     colors: [primaryGreen, aquaBlue],
@@ -54,6 +60,12 @@ class AppTheme {
     blurRadius: 20,
     offset: const Offset(0, 8),
   );
+  static BoxShadow get rowShadow => BoxShadow(
+    color: inkDeep.withOpacity(0.05),
+    blurRadius: 10,
+    offset: const Offset(0, 3),
+  );
+  static const double pagePadding = 16;
 
   static Widget currentLine({double height = 4}) {
     return Container(

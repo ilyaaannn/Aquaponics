@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../helper/app_theme.dart';
-import 'history.dart';
+import 'AI_history.dart';
 
-/// Tab "Notifikasi" pada halaman Riwayat.
-/// Menerima data yang SUDAH difilter (berdasarkan tanggal) dari HistoryPage,
-/// lalu menangani paginasi & tampilannya sendiri.
 class NotificationTab extends StatelessWidget {
   final List<dynamic> notifications;
   final int currentPage;
@@ -31,7 +28,7 @@ class NotificationTab extends StatelessWidget {
         icon: Icons.notifications_off_rounded,
         message: selectedDate == null
             ? 'Tidak ada notifikasi peringatan'
-            : 'Tidak ada notifikasi pada tanggal ${DateFormat('dd/MM/yyyy').format(selectedDate!)}',
+            : 'Tidak ada notifikasi pada tanggal ${DateFormat('dd/MM/yyyy').format(selectedDate!.toLocal())}',
         subtitle: selectedDate == null
             ? 'Semua parameter dalam kondisi normal'
             : 'Pilih tanggal lain untuk melihat notifikasi',
@@ -130,16 +127,9 @@ class NotificationTab extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.containerBg(context),
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            spreadRadius: 1,
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        boxShadow: [AppTheme.rowShadow],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
@@ -191,15 +181,6 @@ class NotificationTab extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        isBahaya
-                            ? 'Parameter melewati batas kritis'
-                            : 'Parameter melewati batas normal',
-                        style: AppTheme.body(
-                          fontSize: 11.5,
-                          color: AppTheme.textSecondary(context),
-                        ),
-                      ),
                       if (detailWarning.isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Container(

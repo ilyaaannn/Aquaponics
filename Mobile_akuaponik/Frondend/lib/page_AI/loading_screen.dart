@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:projekakuaponik/helper/navbar.dart';
 import 'dart:async';
 import '../helper/config.dart';
+import '../helper/desktop_config.dart';
 import '../helper/notification_service.dart';
 import '../main.dart';
 
@@ -49,6 +50,7 @@ class _LoadingScreenState extends State<LoadingScreen>
 
     try {
       await AppConfig.loadConfig();
+      await DesktopConfig.loadConfig();
       await NotificationService.initialize();
       await requestPermissions();
 

@@ -1,3 +1,4 @@
+// header.dart
 import 'package:flutter/material.dart';
 import '../helper/app_theme.dart';
 
@@ -20,18 +21,18 @@ class CustomAppHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         decoration: const BoxDecoration(gradient: AppTheme.panelGradient),
         child: Row(
           children: [
             Container(
-              width: 42,
-              height: 42,
-              padding: const EdgeInsets.all(5),
+              width: 38,
+              height: 38,
+              padding: const EdgeInsets.all(3),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withOpacity(0.2),
                 shape: BoxShape.circle,
               ),
               child: Image.asset('assets/logo_apps.png', fit: BoxFit.contain),
@@ -55,8 +56,8 @@ class CustomAppHeader extends StatelessWidget {
                     Row(
                       children: [
                         Container(
-                          width: 7,
-                          height: 7,
+                          width: 8,
+                          height: 8,
                           decoration: BoxDecoration(
                             color: statusColor,
                             shape: BoxShape.circle,
@@ -68,7 +69,7 @@ class CustomAppHeader extends StatelessWidget {
                             subtitle!,
                             style: AppTheme.data(
                               fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.90),
+                              color: Colors.white,
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -85,4 +86,104 @@ class CustomAppHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+class TabSwitcher extends StatelessWidget {
+  final int currentIndex;
+  final ValueChanged<int> onTabChanged;
+  final List<TabItem> tabs;
+
+  const TabSwitcher({
+    Key? key,
+    required this.currentIndex,
+    required this.onTabChanged,
+    required this.tabs,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppTheme.containerBg(context),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [AppTheme.rowShadow],
+      ),
+      child: Row(
+        children: List.generate(tabs.length, (index) {
+          return Expanded(
+            child: _TabButton(
+              label: tabs[index].label,
+              icon: tabs[index].icon,
+              isSelected: currentIndex == index,
+              onTap: () => onTabChanged(index),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _TabButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _TabButton({
+    Key? key,
+    required this.label,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppTheme.primaryGreen.withOpacity(0.12)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected
+                  ? AppTheme.primaryGreen
+                  : AppTheme.textSecondary(context),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: AppTheme.body(
+                fontSize: 12.5,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected
+                    ? AppTheme.primaryGreen
+                    : AppTheme.textSecondary(context),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class TabItem {
+  final String label;
+  final IconData icon;
+  final Widget page;
+
+  const TabItem({required this.label, required this.icon, required this.page});
 }

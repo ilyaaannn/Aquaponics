@@ -8,11 +8,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import '../helper/app_theme.dart';
 import '../helper/config.dart';
-import 'history.dart';
+import 'AI_history.dart';
 
-/// Tab "Data Sensor" pada halaman Riwayat.
-/// Menerima data yang SUDAH difilter (berdasarkan tanggal) dari HistoryPage,
-/// lalu menangani paginasi & tampilan tabelnya sendiri.
 class DataSensorTab extends StatelessWidget {
   final List<dynamic> sensorData;
   final int currentPage;
@@ -38,7 +35,7 @@ class DataSensorTab extends StatelessWidget {
         icon: Icons.sensors_off_rounded,
         message: selectedDate == null
             ? 'Belum ada data sensor'
-            : 'Tidak ada data pada tanggal ${DateFormat('dd/MM/yyyy').format(selectedDate!)}',
+            : 'Tidak ada data pada tanggal ${DateFormat('dd/MM/yyyy').format(selectedDate!.toLocal())}',
         subtitle: selectedDate == null
             ? 'Data akan muncul setelah sensor terhubung'
             : 'Pilih tanggal lain untuk melihat data',
@@ -54,22 +51,16 @@ class DataSensorTab extends StatelessWidget {
         const SizedBox(height: 6),
         Container(
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.02),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            color: AppTheme.containerBg(context),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [AppTheme.rowShadow],
             border: Border.all(
               color: Theme.of(context).dividerColor,
               width: 0.8,
             ),
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(14),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
@@ -221,94 +212,55 @@ class DataSensorTab extends StatelessWidget {
   }
 }
 
-// ============================================================
-// FITUR UNDUH DATA SENSOR (CSV)
-// Dipanggil dari FAB "CSV" di history.dart lewat
-// showDownloadOptionsDialog(context).
-// ============================================================
-
 Future<void> showDownloadOptionsDialog(BuildContext context) async {
   await showDialog(
     context: context,
     builder: (ctx) {
       return AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
-        contentPadding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
-        actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-        title: Row(
-          children: [
-            Icon(
-              Icons.download_rounded,
-              color: AppTheme.primaryGreen,
-              size: 22,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Unduh Data Sensor',
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
-                ),
-              ),
-            ),
-          ],
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+        actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        title: Text(
+          'Unduh Data Sensor',
+          style: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textPrimary(context),
+          ),
         ),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-                child: Text(
-                  'Pilih rentang waktu data sensor yang ingin diunduh dalam format CSV.',
-                  style: GoogleFonts.inter(
-                    fontSize: 12.5,
-                    color: AppTheme.textSecondary(context),
-                    height: 1.4,
-                  ),
-                ),
-              ),
-              _downloadOptionTile(
+              _buildOptionItem(
                 context: context,
                 label: 'Hari Ini',
                 onTap: () => _handleQuickDownload(context, ctx, days: 0),
               ),
-              _downloadOptionTile(
+              _buildDivider(context),
+              _buildOptionItem(
                 context: context,
                 label: '3 Hari Terakhir',
                 onTap: () => _handleQuickDownload(context, ctx, days: 3),
               ),
-              _downloadOptionTile(
+              _buildDivider(context),
+              _buildOptionItem(
                 context: context,
                 label: '7 Hari Terakhir',
                 onTap: () => _handleQuickDownload(context, ctx, days: 7),
               ),
-              _downloadOptionTile(
+              _buildDivider(context),
+              _buildOptionItem(
                 context: context,
-                label: '14 Hari Terakhir',
-                onTap: () => _handleQuickDownload(context, ctx, days: 14),
-              ),
-              _downloadOptionTile(
-                context: context,
-                label: 'Seluruh Data',
-                subtitle: 'Dari data paling lama hingga terbaru',
+                label: 'Semua Data',
                 onTap: () => _handleQuickDownload(context, ctx, allData: true),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Divider(
-                  height: 1,
-                  color: Theme.of(context).dividerColor,
-                ),
-              ),
-              _downloadOptionTile(
+              _buildDivider(context),
+              _buildOptionItem(
                 context: context,
-                label: 'Rentang Waktu Kustom',
-                subtitle: 'Pilih sendiri tanggal awal dan akhir',
-                highlight: true,
+                label: 'Pilih Tanggal Kustom',
+                icon: Icons.calendar_today_rounded,
                 onTap: () => _handleCustomRangeDownload(context, ctx),
               ),
             ],
@@ -317,10 +269,13 @@ Future<void> showDownloadOptionsDialog(BuildContext context) async {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.textSecondary(context),
+            ),
             child: Text(
               'Batal',
               style: GoogleFonts.inter(
-                color: AppTheme.textSecondary(context),
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -331,45 +286,37 @@ Future<void> showDownloadOptionsDialog(BuildContext context) async {
   );
 }
 
-/// Satu baris opsi di dalam dialog unduh.
-Widget _downloadOptionTile({
+Widget _buildOptionItem({
   required BuildContext context,
   required String label,
-  String? subtitle,
-  bool highlight = false,
+  IconData? icon,
   required VoidCallback onTap,
 }) {
   return InkWell(
     onTap: onTap,
-    borderRadius: BorderRadius.circular(10),
+    borderRadius: BorderRadius.circular(8),
     child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: [
-          Container(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: GoogleFonts.inter(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary(context),
-                  ),
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: AppTheme.textSecondary(context),
-                    ),
-                  ),
-                ],
-              ],
+          if (icon != null) ...[
+            Icon(icon, size: 18, color: AppTheme.primaryGreen),
+            const SizedBox(width: 12),
+          ],
+          Expanded(
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.textPrimary(context),
+              ),
             ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
+            size: 20,
+            color: AppTheme.textSecondary(context).withOpacity(0.5),
           ),
         ],
       ),
@@ -377,7 +324,14 @@ Widget _downloadOptionTile({
   );
 }
 
-/// Menangani opsi cepat: Hari Ini / 3 / 7 / 14 hari terakhir / seluruh data.
+Widget _buildDivider(BuildContext context) {
+  return Divider(
+    height: 1,
+    thickness: 1,
+    color: Theme.of(context).dividerColor.withOpacity(0.3),
+  );
+}
+
 void _handleQuickDownload(
   BuildContext context,
   BuildContext dialogCtx, {
@@ -404,7 +358,6 @@ void _handleQuickDownload(
   downloadSensorDataCSV(context, startDate: startDate, endDate: endDate);
 }
 
-/// Menangani opsi rentang waktu kustom via date range picker.
 Future<void> _handleCustomRangeDownload(
   BuildContext context,
   BuildContext dialogCtx,
@@ -504,46 +457,53 @@ void _showPermissionDeniedDialog(BuildContext context) {
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Row(
-        children: [
-          Icon(Icons.folder_off_rounded, color: AppTheme.paramTemp, size: 22),
-          const SizedBox(width: 8),
-          Text(
-            'Izin Diperlukan',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 16),
-          ),
-        ],
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      title: Text(
+        'Izin Penyimpanan Diperlukan',
+        style: GoogleFonts.inter(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          color: AppTheme.textPrimary(context),
+        ),
       ),
       content: Text(
-        'Izin penyimpanan diperlukan untuk menyimpan file CSV ke folder Download.\n\n'
-        'Buka Pengaturan Aplikasi → Izin → Penyimpanan → Izinkan.',
-        style: GoogleFonts.inter(fontSize: 13, height: 1.5),
+        'Aplikasi memerlukan izin penyimpanan untuk menyimpan file CSV.',
+        style: GoogleFonts.inter(
+          fontSize: 13,
+          color: AppTheme.textSecondary(context),
+          height: 1.4,
+        ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx),
+          style: TextButton.styleFrom(
+            foregroundColor: AppTheme.textSecondary(context),
+          ),
           child: Text(
             'Batal',
-            style: GoogleFonts.inter(color: AppTheme.textSecondary(context)),
+            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600),
           ),
         ),
-        ElevatedButton.icon(
+        ElevatedButton(
           onPressed: () {
             Navigator.pop(ctx);
-            openAppSettings(); // Buka halaman izin aplikasi di Settings
+            openAppSettings();
           },
-          icon: const Icon(Icons.settings_rounded, size: 16),
-          label: Text(
-            'Buka Pengaturan',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
-          ),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppTheme.primaryGreen,
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
             ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          ),
+          child: Text(
+            'Buka Pengaturan',
+            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
           ),
         ),
       ],
@@ -577,13 +537,6 @@ Future<String?> _getDownloadPath(String filename) async {
   }
 }
 
-/// Mengunduh CSV data sensor dari backend.
-///
-/// PENTING: [startDate] & [endDate] dikirim sebagai query param
-/// `start_date` / `end_date` ke endpoint `/api/sensor/export`.
-/// Backend WAJIB benar-benar memfilter data berdasarkan parameter ini
-/// (lihat perbaikan pada route_api.py) — jika tidak, nama file akan
-/// terlihat sesuai rentang tapi isi CSV tetap seluruh data.
 Future<void> downloadSensorDataCSV(
   BuildContext context, {
   DateTime? startDate,
@@ -592,7 +545,9 @@ Future<void> downloadSensorDataCSV(
   try {
     final bool hasPermission = await _requestStoragePermission(context);
     if (!hasPermission) return;
+
     final bool isRangeDownload = startDate != null && endDate != null;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -645,9 +600,9 @@ Future<void> downloadSensorDataCSV(
 
     if (response.statusCode == 200) {
       final rangeLabel = isRangeDownload
-          ? '_${DateFormat('yyyy MM dd').format(startDate)}-${DateFormat('yyyy MM dd').format(endDate)}'
+          ? ' - ${DateFormat('yyyyMMdd').format(startDate)}-${DateFormat('yyyyMMdd').format(endDate)}'
           : '';
-      final filename = 'sensor data${rangeLabel}.csv';
+      final filename = 'sensor_data${rangeLabel}.csv';
       final filePath = await _getDownloadPath(filename);
 
       if (filePath == null) {
@@ -669,12 +624,16 @@ Future<void> downloadSensorDataCSV(
                 style: GoogleFonts.inter(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
+                  color: Colors.white,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 '📁 Download/$filename',
-                style: GoogleFonts.inter(fontSize: 11),
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: Colors.white.withOpacity(0.8),
+                ),
               ),
             ],
           ),
