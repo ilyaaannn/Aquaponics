@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class DesktopConfig {
-  static const int _fallbackPort = 8080;
+  static const int _fallbackPort = 8000;
   static String? _baseUrl;
   static String? _savedIp;
   static int _savedPort = _fallbackPort;
@@ -10,7 +10,7 @@ class DesktopConfig {
   /// Notifier agar seluruh UI di halaman Data Desktop bisa rebuild begitu IP/port server berubah.
   static final ValueNotifier<String> apiUrlNotifier = ValueNotifier<String>('');
 
-  /// URL dasar, contoh: http://192.168.1.10:8080
+  /// URL dasar, contoh: http://192.168.1.10:8000
   static String get apiUrl => _baseUrl ?? '';
 
   /// IP/host aktif yang tersimpan.

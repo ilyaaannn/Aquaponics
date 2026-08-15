@@ -9,6 +9,23 @@ import { useSensorData } from '../composables/useSensorData'
 
 const { isConnected, currentPort } = useSerial()
 const { lastUpdateFormatted, dataReceived } = useSensorData()
+const isPoweringOff = ref(false)
+
+/**
+ * Matikan tampilan aplikasi. Konfirmasi ditampilkan oleh main process
+ * (native dialog) supaya tidak sengaja tertekan di layar sentuh.
+ * Proses background (serial, database, server mobile) tetap berjalan;
+ * nyalakan kembali lewat saklar fisik, ikon tray, atau Ctrl+Alt+P.
+ */
+async function handlePowerOff(): Promise<void> {
+  if (isPoweringOff.value) return
+  isPoweringOff.value = true
+  try {
+    await window.api.power.turnOff()
+  } finally {
+    isPoweringOff.value = false
+  }
+}
 
 const networkIP = ref<string | null>(null)
 const networkIface = ref<string | null>(null)
@@ -95,8 +112,21 @@ async function handleClose(): Promise<void> {
       </div>
     </div>
 
-    <!-- Right: Connection Status & Window controls -->
+    <!-- Right: Power ON/OFF, Connection Status & Window controls -->
     <div class="flex flex-wrap items-center justify-center lg:justify-end gap-1.5 lg:gap-2 w-full lg:w-auto">
+
+      <!-- Power ON/OFF (matikan tampilan aplikasi, proses background tetap berjalan) -->
+      <button
+        @click="handlePowerOff"
+        :disabled="isPoweringOff"
+        class="flex items-center justify-center w-8 h-8 rounded-lg bg-black/40 border border-white/10 text-neon-green/70 hover:text-white hover:bg-neon-green/20 hover:border-neon-green/40 hover:shadow-[0_0_15px_rgba(57,255,20,0.4)] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+        title="Matikan Tampilan Aplikasi (proses background tetap berjalan)"
+      >
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+          <line x1="12" y1="2" x2="12" y2="12" />
+        </svg>
+      </button>
 
       <!-- Status dot -->
       <div class="flex items-center gap-2 ml-1">

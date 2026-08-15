@@ -37,7 +37,7 @@ export async function initDatabase(): Promise<void> {
     user: 'postgres',
     host: 'localhost',
     database: 'aquaphonik',
-    password: 'postgres', // Password dari user
+    password: '123456', // Password dari user
     port: 5432
   })
 

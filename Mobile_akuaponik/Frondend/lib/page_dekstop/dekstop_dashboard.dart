@@ -1,114 +1,119 @@
-import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import '../helper/app_theme.dart';
 import '../helper/desktop_config.dart';
+import '../helper/realtime_sockets.dart';
+import '../helper/navbar.dart';
 import '../model/model_desktop.dart';
 
 class DesktopDashboardTab extends StatefulWidget {
-  const DesktopDashboardTab({Key? key}) : super(key: key);
+  final Function(bool)? onOnlineStatusChanged;
+
+  const DesktopDashboardTab({Key? key, this.onOnlineStatusChanged})
+    : super(key: key);
 
   @override
   State<DesktopDashboardTab> createState() => _DesktopDashboardTabState();
 }
 
 class _DesktopDashboardTabState extends State<DesktopDashboardTab> {
-  Timer? _timer;
-  List<dynamic> _logs = [];
+  final List<Map<String, dynamic>> _logs = [];
+  static const int _maxLogs = 50;
+
   bool _isLoading = true;
-  String _errorMessage = '';
   bool _isOnline = false;
+  String _errorMessage = '';
 
   @override
   void initState() {
     super.initState();
     DesktopConfig.apiUrlNotifier.addListener(_onConfigChanged);
-    _startPolling();
+    desktopSocket.latestData.addListener(_onLiveData);
+    desktopSocket.isConnected.addListener(_onSocketStatus);
+
+    _bootstrap();
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
     DesktopConfig.apiUrlNotifier.removeListener(_onConfigChanged);
+    desktopSocket.latestData.removeListener(_onLiveData);
+    desktopSocket.isConnected.removeListener(_onSocketStatus);
     super.dispose();
+  }
+
+  void _bootstrap() {
+    if (!DesktopConfig.isConfigured) {
+      setState(() {
+        _isLoading = false;
+        _isOnline = false;
+        _errorMessage =
+            'Buka tab Setting dan masukkan IP server Desktop\nuntuk koneksi ke perangkat';
+      });
+      _notifyStatus(false);
+      return;
+    }
+
+    setState(() {
+      _isLoading = _logs.isEmpty;
+      _errorMessage = '';
+    });
+    desktopSocket.connect();
+
+    Future.delayed(const Duration(seconds: 10), () {
+      if (!mounted) return;
+      if (!desktopSocket.isConnected.value && _logs.isEmpty) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage =
+              'Server tidak merespons.\nPastikan HP dan komputer desktop di jaringan yang sama.\n'
+              'Server: ${DesktopConfig.apiUrl}';
+        });
+      }
+    });
   }
 
   void _onConfigChanged() {
     if (!mounted) return;
     setState(() {
+      _logs.clear();
       _isLoading = true;
       _errorMessage = '';
-      _logs = [];
       _isOnline = false;
     });
-    _timer?.cancel();
-    _startPolling();
+    _notifyStatus(false);
+    _bootstrap();
   }
 
-  void _startPolling() {
-    fetchData();
-    _timer = Timer.periodic(const Duration(seconds: 5), (_) => fetchData());
+  void _onSocketStatus() {
+    if (!mounted) return;
+    final connected = desktopSocket.isConnected.value;
+    setState(() => _isOnline = connected);
+    _notifyStatus(connected);
+    if (connected) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = '';
+      });
+    }
   }
 
-  Future<void> fetchData() async {
-    if (!DesktopConfig.isConfigured) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _isOnline = false;
-        });
-      }
-      return;
-    }
+  void _onLiveData() {
+    if (!mounted) return;
+    final data = desktopSocket.latestData.value;
+    if (data == null) return;
+    setState(() {
+      _logs.insert(0, data);
+      if (_logs.length > _maxLogs) _logs.removeLast();
+      _isLoading = false;
+      _isOnline = true;
+      _errorMessage = '';
+    });
+    _notifyStatus(true);
+  }
 
-    try {
-      final uri = Uri.parse(
-        '${DesktopConfig.apiUrl}/api/history',
-      ).replace(queryParameters: {'limit': '25'});
-      final response = await http.get(uri).timeout(const Duration(seconds: 5));
-
-      if (response.statusCode == 200) {
-        final decoded = json.decode(response.body);
-        final List<dynamic> data = decoded['data'] ?? [];
-        if (mounted) {
-          setState(() {
-            _logs = data;
-            _isLoading = false;
-            _isOnline = true;
-            _errorMessage = '';
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            _errorMessage = 'Server error (${response.statusCode}).';
-            _isLoading = false;
-            _isOnline = false;
-          });
-        }
-      }
-    } on TimeoutException {
-      if (mounted) {
-        setState(() {
-          _errorMessage =
-              'Server tidak merespons.\nPeriksa IP: ${DesktopConfig.apiUrl}';
-          _isLoading = false;
-          _isOnline = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage =
-              'Koneksi gagal.\nPastikan HP dan komputer desktop berada di '
-              'jaringan yang sama.\nServer: ${DesktopConfig.apiUrl}';
-          _isLoading = false;
-          _isOnline = false;
-        });
-      }
-    }
+  void _notifyStatus(bool online) {
+    widget.onOnlineStatusChanged?.call(online);
   }
 
   @override
@@ -116,21 +121,18 @@ class _DesktopDashboardTabState extends State<DesktopDashboardTab> {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_errorMessage.isNotEmpty) {
+    if (_errorMessage.isNotEmpty && _logs.isEmpty) {
       return _buildErrorState();
     }
     if (_logs.isEmpty) {
       return _buildEmptyState();
     }
 
-    return RefreshIndicator(
-      onRefresh: fetchData,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-        child: Column(
-          children: [const SizedBox(height: 12), _buildParameterGrid()],
-        ),
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+      child: Column(
+        children: [const SizedBox(height: 12), _buildParameterGrid()],
       ),
     );
   }
@@ -151,7 +153,7 @@ class _DesktopDashboardTabState extends State<DesktopDashboardTab> {
             const SizedBox(height: 14),
             Text(
               isNotConfigured
-                  ? 'Server Desktop Belum Terhubung'
+                  ? 'Server Desktop Belum Dikonfigurasi'
                   : 'Koneksi Gagal',
               style: AppTheme.display(
                 fontSize: 16,
@@ -162,21 +164,49 @@ class _DesktopDashboardTabState extends State<DesktopDashboardTab> {
             ),
             const SizedBox(height: 6),
             Text(
-              _errorMessage.isEmpty
-                  ? 'Hubungkan ke server Aplikasi Desktop melalui ikon di pojok kanan atas.'
-                  : _errorMessage,
+              _errorMessage,
               style: GoogleFonts.inter(
                 fontSize: 12,
                 color: AppTheme.textSecondary(context),
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 14),
-            if (!isNotConfigured)
+            const SizedBox(height: 10),
+            if (isNotConfigured)
+              ElevatedButton.icon(
+                onPressed: () {
+                  MainNavigation.goToTab(2);
+                },
+                icon: const Icon(
+                  Icons.settings_rounded,
+                  color: Colors.white,
+                  size: 16,
+                ),
+                label: Text(
+                  'Buka Setting',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: Colors.white,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryGreen,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
+                ),
+              )
+            else
               ElevatedButton.icon(
                 onPressed: () {
                   setState(() => _isLoading = true);
-                  fetchData();
+                  _bootstrap();
                 },
                 icon: const Icon(
                   Icons.refresh_rounded,
@@ -246,7 +276,7 @@ class _DesktopDashboardTabState extends State<DesktopDashboardTab> {
   }
 
   Widget _buildParameterGrid() {
-    final latest = _logs.first as Map<String, dynamic>;
+    final latest = _logs.first;
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Container(
@@ -274,7 +304,7 @@ class _DesktopDashboardTabState extends State<DesktopDashboardTab> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          '11 Parameter Sensor',
+                          '11 Parameter Sensor  •  Live',
                           style: AppTheme.display(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,

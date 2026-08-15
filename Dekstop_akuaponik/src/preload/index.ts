@@ -139,6 +139,12 @@ const aquaphonikAPI = {
       dateRange: { start: string; end: string }
     ): Promise<{ success: boolean; message: string; filePath?: string }> =>
       ipcRenderer.invoke('export:excel', data, dateRange)
+  },
+
+  // ---- Power (ON/OFF Tampilan Aplikasi) ----
+  power: {
+    turnOff: (): Promise<{ success: boolean }> => ipcRenderer.invoke('power:turn-off'),
+    getState: (): Promise<{ visible: boolean }> => ipcRenderer.invoke('power:get-state')
   }
 }
 

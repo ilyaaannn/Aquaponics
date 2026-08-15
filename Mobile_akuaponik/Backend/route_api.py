@@ -1,6 +1,19 @@
 from flask import Blueprint, jsonify, request, Response
 from datetime import datetime
 import json
+import pytz 
+
+# Set zona waktu Asia/Jakarta
+JAKARTA_TZ = pytz.timezone('Asia/Jakarta')
+
+def get_jakarta_time():
+    return datetime.now(JAKARTA_TZ)
+
+
+def format_jakarta_iso(dt):
+    if dt.tzinfo is None:
+        dt = JAKARTA_TZ.localize(dt)
+    return dt.isoformat()
 
 
 def create_api_blueprint(
@@ -17,6 +30,14 @@ def create_api_blueprint(
     api_bp = Blueprint('api', __name__)
     from firebase_admin import messaging
 
+    # Helper untuk mendapatkan koneksi database
+    def get_db_conn():
+        return db_pool.getconn()
+
+    def return_db_conn(conn):
+        if conn:
+            db_pool.putconn(conn)
+
 
     # -------------------------------------------------
     # SENSOR
@@ -27,7 +48,14 @@ def create_api_blueprint(
             data = redis_client.get('current_water_data')
             if data:
                 response_data = json.loads(data)
-                response_data['last_update'] = datetime.now().isoformat()
+                try:
+                    dt = datetime.fromisoformat(response_data['timestamp'])
+                    if dt.tzinfo is None:
+                        dt = JAKARTA_TZ.localize(dt)
+                    response_data['timestamp'] = dt.isoformat()
+                except:
+                    response_data['timestamp'] = get_jakarta_time().isoformat()
+                response_data['last_update'] = get_jakarta_time().isoformat()
                 return jsonify(response_data)
             return jsonify({'error': 'No data available'}), 404
         except Exception as e:
@@ -35,12 +63,22 @@ def create_api_blueprint(
 
     @api_bp.route('/api/history', methods=['GET'])
     def get_history():
-        """Ambil data riwayat sensor selama 1 jam terakhir dari Redis (urutan kronologis)."""
+        """Ambil data riwayat sensor selama 1 jam terakhir dari Redis."""
         try:
             history_key  = "water_sensor_history"
             history_data = redis_client.lrange(history_key, 0, -1)
             if history_data:
-                history = [json.loads(item) for item in history_data]
+                history = []
+                for item in history_data:
+                    data = json.loads(item)
+                    try:
+                        dt = datetime.fromisoformat(data['timestamp'])
+                        if dt.tzinfo is None:
+                            dt = JAKARTA_TZ.localize(dt)
+                        data['timestamp'] = dt.isoformat()
+                    except:
+                        pass
+                    history.append(data)
                 history.reverse()
                 return jsonify(history)
             return jsonify([])
@@ -79,12 +117,15 @@ def create_api_blueprint(
 
     @api_bp.route('/api/sensor/export', methods=['GET'])
     def export_sensor_csv():
-        db_conn = db_pool.getconn()
-        db_cursor = db_conn.cursor()
+        """Export data sensor ke CSV dari tabel water_history."""
+        conn = None
+        cursor = None
         try:
+            conn = get_db_conn()
+            cursor = conn.cursor()
+
             start_date = request.args.get('start_date')
             end_date = request.args.get('end_date')
-
             query = """ SELECT created_at, water_Temp, water_pH, disolved_oxg, TDS, status FROM water_history """
             conditions = []
             params = []
@@ -101,9 +142,9 @@ def create_api_blueprint(
 
             query += " ORDER BY created_at ASC"
 
-            db_cursor.execute(query, tuple(params))
-            rows = db_cursor.fetchall()
-            col_names = [desc[0] for desc in db_cursor.description]
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            col_names = [desc[0] for desc in cursor.description]
 
             print(f"[EXPORT] filter start_date={start_date!r} end_date={end_date!r} -> {len(rows)} baris")
 
@@ -113,6 +154,11 @@ def create_api_blueprint(
                 for i, v in enumerate(row):
                     if v is None:
                         formatted_row.append('')
+                    elif isinstance(v, datetime):
+                        # Konversi ke waktu Jakarta untuk export
+                        if v.tzinfo is None:
+                            v = JAKARTA_TZ.localize(v)
+                        formatted_row.append(v.strftime('%Y-%m-%d %H:%M:%S'))
                     elif isinstance(v, float):
                         formatted_row.append(f"{v:.3f}")
                     else:
@@ -120,15 +166,14 @@ def create_api_blueprint(
                 lines.append(','.join(formatted_row))
             csv_content = '\n'.join(lines)
 
-            # Nama file dinamis: sertakan rentang tanggal jika difilter
+            # Nama file dinamis dengan waktu Jakarta
+            now_jkt = get_jakarta_time()
             if start_date and end_date:
                 start_label = start_date[:10].replace('-', '')
                 end_label = end_date[:10].replace('-', '')
                 filename = f'sensor_data_{start_label}-{end_label}.csv'
             else:
-                filename = f'sensor_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-
-            db_conn.commit()
+                filename = f'sensor_data_{now_jkt.strftime("%Y%m%d_%H%M%S")}.csv'
 
             return Response(
                 csv_content,
@@ -139,53 +184,21 @@ def create_api_blueprint(
                 }
             )
         except Exception as e:
-            db_conn.rollback()
             return jsonify({'error': str(e)}), 500
         finally:
-            db_cursor.close()
-            db_pool.putconn(db_conn)
+            if cursor:
+                cursor.close()
+            if conn:
+                return_db_conn(conn)
 
 
     # -------------------------------------------------
-    # KONTROL PERANGKAT
-    @api_bp.route('/api/control', methods=['POST'])
-    def control_device():
-        """
-        Terima perintah kontrol dari Flutter.
-        Body JSON: { "device": "aerator"|"pompa_air", "state": true|false }
-        """
-        try:
-            body   = request.get_json(silent=True) or {}
-            device = body.get('device', '').strip()
-            state  = body.get('state', False)
-
-            valid_devices = {'aerator', 'pompa_air'}
-            if device not in valid_devices:
-                return jsonify({'error': f'Perangkat tidak dikenal: {device}'}), 400
-
-            redis_client.hset('device_control', device, '1' if state else '0')
-            print(f"[CONTROL] {device} → {'ON' if state else 'OFF'}")
-
-            socketio.emit('device_control', {'device': device, 'state': state})
-            return jsonify({
-                'message': f'{device} diatur ke {"ON" if state else "OFF"}',
-                'device' : device,
-                'state'  : state,
-            })
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
-
-    @api_bp.route('/api/control/status', methods=['GET'])
-    def get_control_status():
-        """Baca state semua perangkat dari Redis."""
-        try:
-            raw = redis_client.hgetall('device_control')
-            result = {k: (v == '1') for k, v in raw.items()}
-            return jsonify(result)
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
-
-
+    # CATATAN ARSITEKTUR (Opsi A):
+    # Kontrol aktuator (aerator/pompa air) TIDAK lagi lewat server Python ini.
+    # Mobile app mengirim perintah langsung ke server Desktop (Electron) via
+    # Socket.IO event 'actuator/command', karena server Desktop-lah yang
+    # memegang koneksi serial fisik ke Arduino. Server Python di sini murni
+    # untuk pembacaan AI/histori kualitas air.
     # -------------------------------------------------
     # NOTIFIKASI
     @api_bp.route('/api/notifications', methods=['GET'])
@@ -210,9 +223,9 @@ def create_api_blueprint(
 
     @api_bp.route('/api/notifications/clean', methods=['DELETE'])
     def clean_old_notifications():
-        """Hapus notifikasi lama sebelum tanggal tertentu untuk menghemat ruang penyimpanan."""
+        """Hapus notifikasi lama sebelum tanggal tertentu."""
         try:
-            data            = request.get_json(silent=True) or {}
+            data = request.get_json(silent=True) or {}
             before_date_str = data.get('before_date')
             if not before_date_str:
                 return jsonify({'error': 'Parameter before_date diperlukan'}), 400
@@ -285,7 +298,7 @@ def create_api_blueprint(
 
     @api_bp.route('/api/fcm/unregister', methods=['DELETE'])
     def unregister_fcm_token():
-        """Hapus token perangkat dari Redis & batalkan langganan topik Firebase (logout/uninstall)."""
+        """Hapus token perangkat dari Redis."""
         try:
             body  = request.get_json(silent=True) or {}
             token = body.get('token', '').strip()
@@ -307,7 +320,7 @@ def create_api_blueprint(
 
     @api_bp.route('/api/fcm/tokens', methods=['GET'])
     def list_fcm_tokens():
-        """Tampilkan daftar seluruh token perangkat yang terdaftar beserta info platform."""
+        """Tampilkan daftar seluruh token perangkat yang terdaftar."""
         try:
             all_tokens = redis_client.hgetall(REDIS_FCM_TOKENS_KEY)
             result = []
@@ -353,13 +366,28 @@ def create_api_blueprint(
         """Pastikan server backend, Redis, database, model ML, dan Firebase berjalan normal."""
         try:
             redis_client.ping()
+            conn = None
+            try:
+                conn = get_db_conn()
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1")
+                cursor.close()
+                db_status = 'connected'
+            except Exception as e:
+                db_status = f'error: {str(e)}'
+            finally:
+                if conn:
+                    return_db_conn(conn)
+
             return jsonify({
                 'status'          : 'healthy',
                 'redis'           : 'connected',
+                'database'        : db_status,
                 'model'           : 'loaded',
                 'firebase'        : 'enabled' if FIREBASE_ENABLED else 'disabled',
                 'fcm_tokens_total': redis_client.hlen(REDIS_FCM_TOKENS_KEY),
-                'timestamp'       : datetime.now().isoformat(),
+                'timestamp'       : get_jakarta_time().isoformat(),
+                'timezone'        : 'Asia/Jakarta',
             })
         except Exception as e:
             return jsonify({'status': 'unhealthy', 'error': str(e)}), 500

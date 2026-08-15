@@ -85,7 +85,6 @@ const floatingSensors = computed(() => [
       class="dashboard-scale-wrapper p-4 lg:p-6 xl:p-8 space-y-6 xl:space-y-8 flex flex-col min-h-full"
       :style="{ zoom: dashboardScale }"
     >
-    <!-- No extra header here, moved to Top Nav -->
 
     <!-- ===== No Data Warning ===== -->
     <div v-if="!dataReceived && !isConnected" class="glass-card p-14 text-center animate-fade-in border-2 border-white/40 bg-slate-900/80">

@@ -51,6 +51,13 @@ interface ExportAPI {
   ) => Promise<{ success: boolean; message: string; filePath?: string }>
 }
 
+interface PowerAPI {
+  /** Matikan tampilan aplikasi (proses background tetap berjalan) */
+  turnOff: () => Promise<{ success: boolean }>
+  /** Ambil status tampilan aplikasi saat ini (ON/OFF) */
+  getState: () => Promise<{ visible: boolean }>
+}
+
 interface AquaphonikAPI {
   serial: SerialAPI
   database: DatabaseAPI
@@ -58,6 +65,7 @@ interface AquaphonikAPI {
   system: SystemAPI
   export: ExportAPI
   windowControls: WindowControlsAPI
+  power: PowerAPI
 }
 
 declare global {

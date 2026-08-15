@@ -10,15 +10,17 @@ class AppConfig {
 
   // ── Notifier agar seluruh UI bisa rebuild saat IP berubah ────────────────
   static final ValueNotifier<String> apiUrlNotifier = ValueNotifier<String>('');
+
+  /// URL dasar yang digunakan untuk request API
   static String get apiUrl => _baseUrl ?? '';
 
-  /// URL dasar
+  /// IP/host aktif yang tersimpan
   static String get currentIp => _savedIp ?? '';
 
-  /// IP aktif yang ditampilkan di halaman Setting
+  /// Port aktif yang tersimpan
   static int get currentPort => _savedPort;
 
-  /// Port aktif
+  /// true jika konfigurasi sudah diatur oleh pengguna, false jika belum
   static bool get isConfigured => _baseUrl != null && _baseUrl!.isNotEmpty;
 
   static Future<void> loadConfig() async {

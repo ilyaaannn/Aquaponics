@@ -32,15 +32,20 @@ import {
 } from './database'
 // Server: Modul komunikasi REST API dan Socket.IO dengan Flutter Mobile
 import { initServer, publishSensorData, closeServer } from './express-api'
+// Redis Cache: menyimpan data sensor real-time (TTL 1 jam) untuk stream mobile
+import { initRedisCache, closeRedisCache } from './redis-cache'
+// Power Manager: fitur ON/OFF tampilan aplikasi 
+import { initPowerManager, cleanupPowerManager, hideApp, isAppVisible } from './power-manager'
 
 // --- Data Logging Interval ---
 // We receive data every ~2 seconds from the MCU, but we only save to DB
 // at a configurable interval to prevent database bloat.
 let logIntervalMinutes = 1 // Default: save every 1 minute
 let lastLogTimestamp = 0
+let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 800,
@@ -55,15 +60,16 @@ function createWindow(): void {
       sandbox: false
     }
   })
-
-  mainWindow.on('ready-to-show', () => {
+  mainWindow = win
+  
+  win.on('ready-to-show', () => {
     if (process.platform === 'linux') {
-      mainWindow.maximize()
+      win.maximize()
     }
-    mainWindow.show()
+    win.show()
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
@@ -80,91 +86,69 @@ function createWindow(): void {
 // Register IPC Handlers
 // =====================================================
 function registerIpcHandlers(): void {
-  // --- Serial Port Handlers ---
+  // ----- Serial Port Handlers -----
 
-  /**
-   * Scan available COM/Serial ports
-   */
+  // Scan available COM/Serial ports
   ipcMain.handle('serial:list-ports', async () => {
     return await listPorts()
   })
 
-  /**
-   * Connect to a serial port
-   */
+  // Connect to a serial port
   ipcMain.handle('serial:connect', async (_event, portPath: string, baudRate?: number) => {
     return await connectPort(portPath, baudRate)
   })
 
-  /**
-   * Disconnect from the serial port
-   */
+  // Disconnect from the serial port
   ipcMain.handle('serial:disconnect', async () => {
     return await disconnectPort()
   })
 
-  /**
-   * Send a command to the microcontroller
-   */
+  // Send a command to the microcontroller
   ipcMain.handle('serial:send-command', (_event, command: string) => {
     return sendCommand(command)
   })
 
-  /**
-   * Get current serial connection status
-   */
+  // Get current serial connection status
   ipcMain.handle('serial:get-status', () => {
     return getStatus()
   })
 
-  // --- Database Handlers ---
+  // ----- Database Handlers -----
 
-  /**
-   * Get latest sensor logs
-   */
+  // Get latest sensor logs
   ipcMain.handle('db:get-latest-logs', (_event, limit?: number) => {
     return getLatestLogs(limit)
   })
 
-  /**
-   * Get logs by date range
-   */
+  // Get logs by date range
   ipcMain.handle('db:get-logs-by-date', (_event, startDate: string, endDate: string) => {
     return getLogsByDateRange(startDate, endDate)
   })
 
-  /**
-   * Get total log count
-   */
+    // Get total log count
   ipcMain.handle('db:get-log-count', () => {
     return getLogCount()
   })
 
-  /**
-   * Delete old logs
-   */
+  // Delete old logs
   ipcMain.handle('db:delete-old-logs', (_event, daysToKeep?: number) => {
     return deleteOldLogs(daysToKeep)
   })
 
-  // --- Settings Handlers ---
+  // ----- Settings Handlers -----
 
-  /**
-   * Set the log interval (in minutes)
-   */
+  // Set the log interval (in minutes)
   ipcMain.handle('settings:set-log-interval', (_event, minutes: number) => {
     logIntervalMinutes = Math.max(1, minutes)
     return { success: true, interval: logIntervalMinutes }
   })
 
-  /**
-   * Get current log interval
-   */
+  // Get current log interval
   ipcMain.handle('settings:get-log-interval', () => {
     return { interval: logIntervalMinutes }
   })
 
-  // --- System Handlers ---
+  // ----- System Handlers -----
 
   /**
    * Get the current WiFi/LAN IP address
@@ -172,7 +156,6 @@ function registerIpcHandlers(): void {
    */
   ipcMain.handle('system:get-network-ip', () => {
     const nets = networkInterfaces()
-    // Priority order for interface names
     const priorityInterfaces = ['wlan0', 'wlan1', 'Wi-Fi', 'eth0', 'en0', 'Ethernet']
 
     // First, try priority interfaces
@@ -201,7 +184,7 @@ function registerIpcHandlers(): void {
     return { ip: null, iface: null }
   })
 
-  // --- Window Controls Handlers ---
+  // ----- Window Controls Handlers -----
 
   ipcMain.handle('window:minimize', () => {
     const win = BrowserWindow.getFocusedWindow()
@@ -212,7 +195,41 @@ function registerIpcHandlers(): void {
     app.quit()
   })
 
-  // --- Export Handlers ---
+  // ----- Power (ON/OFF Tampilan Aplikasi) Handler -----
+
+  /**
+   * Matikan TAMPILAN aplikasi (bukan quit). Proses background — pembacaan
+   * serial, logging ke database, server untuk mobile — tetap berjalan.
+   */
+  ipcMain.handle('power:turn-off', async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false }
+    }
+
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Batal', 'Ya, Matikan Tampilan'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Matikan Tampilan Aplikasi',
+      message: 'Tampilan aplikasi akan disembunyikan.',
+      detail:
+        'Pembacaan sensor, kalibrasi, dan pengiriman data ke database serta aplikasi mobile TETAP berjalan di background. Nyalakan kembali lewat saklar fisik, ikon tray, atau shortcut Ctrl+Alt+P.'
+    })
+
+    if (response === 1) {
+      hideApp()
+      return { success: true }
+    }
+    return { success: false }
+  })
+
+  //  Ambil status tampilan aplikasi saat ini (ON/OFF)
+  ipcMain.handle('power:get-state', () => {
+    return { visible: isAppVisible() }
+  })
+
+  // ----- Export Handlers -----
 
   /**
    * Export sensor data to Excel (.xlsx) file
@@ -232,7 +249,6 @@ function registerIpcHandlers(): void {
 
       // Show save dialog
       const defaultName = `AquaPhonik_Data_${dateRange.start}_to_${dateRange.end}.xlsx`
-      
       const result = await dialog.showSaveDialog({
         title: 'Simpan Data Sensor ke Excel',
         defaultPath: defaultName,
@@ -446,6 +462,9 @@ app.whenReady().then(async () => {
   // Initialize database — MUST await so pool is ready before IPC handlers and window
   await initDatabase()
 
+  // Initialize Redis cache — untuk data real-time 1 jam yang dipakai stream mobile
+  await initRedisCache()
+
   // Initialize Server (Express + Socket.IO) untuk komunikasi dengan Flutter
   initServer()
 
@@ -454,6 +473,10 @@ app.whenReady().then(async () => {
 
   // Create the main window
   createWindow()
+
+  // power manager: tray icon, shortcut (ctrl+alt+p) 
+  // dan perangkat fisik saklar GPIO pada power-manager.ts
+  initPowerManager(() => mainWindow)
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -468,7 +491,9 @@ app.on('window-all-closed', () => {
 
 // Cleanup on quit
 app.on('before-quit', () => {
+  cleanupPowerManager()
   serialCleanup()
   closeServer()
   closeDatabase()
+  closeRedisCache()
 })

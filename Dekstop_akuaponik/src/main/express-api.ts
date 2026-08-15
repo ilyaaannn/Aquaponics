@@ -3,12 +3,18 @@ import { createServer } from 'http'
 import { Server } from 'socket.io'
 import cors from 'cors'
 import { getLatestLogs, getLogsByDateRange } from './database'
-import { sendCommand } from './serial'
+import { sendCommand, getStatus as getSerialStatus } from './serial'
+import {
+  cacheSensorData,
+  getLatestCachedData,
+  normalizeSensorPayload,
+  pingRedis
+} from './redis-cache'
 
 let io: Server | null = null
 let httpServer: ReturnType<typeof createServer> | null = null
 
-const PORT = 8080
+const PORT = 8000
 
 export function initServer(): void {
   const app = express()
@@ -21,6 +27,38 @@ export function initServer(): void {
     allowedHeaders: ['Content-Type', 'Authorization'],
   }))
   app.use(express.json())
+
+  // --- Health check — dipakai tombol "Tes Ulang" di halaman Setting Flutter ---
+  app.get('/api/health', async (_req, res) => {
+    try {
+      const redisOk = await pingRedis()
+      const serial = getSerialStatus()
+      res.json({
+        status: 'healthy',
+        server: 'desktop',
+        redis: redisOk ? 'connected' : 'disconnected',
+        serial: serial.connected ? 'connected' : 'disconnected',
+        serial_port: serial.port || null,
+        timestamp: new Date().toISOString()
+      })
+    } catch (err) {
+      res.status(500).json({ status: 'unhealthy', error: (err as Error).message })
+    }
+  })
+
+  // --- Data sensor terkini dari cache Redis (fallback saat baru reconnect) ---
+  app.get('/api/current', async (_req, res) => {
+    try {
+      const data = await getLatestCachedData()
+      if (data) {
+        res.json(data)
+      } else {
+        res.status(404).json({ error: 'Belum ada data tersimpan di cache' })
+      }
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message })
+    }
+  })
 
   // --- REST API untuk Request History ---
   app.get('/api/history', async (req, res) => {
@@ -65,7 +103,18 @@ export function initServer(): void {
   io.on('connection', (socket) => {
     console.log(`🔌 [Socket.IO] Klien terhubung: ${socket.id}`)
 
-    // Mendengarkan perintah aktuator dari Flutter
+    // Kirim data terakhir dari cache Redis begitu client connect, agar mobile
+    // tidak perlu menunggu siklus kirim serial berikutnya (maks. 2 detik).
+    getLatestCachedData()
+      .then((data) => {
+        if (data) socket.emit('sensor/realtime', data)
+      })
+      .catch(() => {
+        /* cache belum tersedia, biarkan menunggu data pertama dari serial */
+      })
+
+    // Mendengarkan perintah aktuator dari Flutter (Opsi A: kontrol langsung
+    // ke server Desktop ini, karena di sinilah koneksi serial fisik berada)
     socket.on('actuator/command', (payload: { command: string }) => {
       console.log(`📥 [Socket.IO] Perintah aktuator diterima:`, payload)
       if (payload && payload.command) {
@@ -85,12 +134,19 @@ export function initServer(): void {
 }
 
 /**
- * Publish data sensor realtime melalui Socket.IO
- * Dipanggil dari index.ts setiap kali ada data serial baru
+ * Publish data sensor realtime melalui Socket.IO + simpan ke cache Redis (1 jam).
+ * Dipanggil dari index.ts setiap kali ada data serial baru (~tiap 2 detik).
  */
 export function publishSensorData(data: Record<string, number>): void {
+  const normalized = normalizeSensorPayload(data)
+
+  // Cache ke Redis (fire-and-forget — tidak menunda broadcast Socket.IO)
+  cacheSensorData(normalized).catch((err) =>
+    console.error('[Redis] Gagal cache data sensor:', err)
+  )
+
   if (io) {
-    io.emit('sensor/realtime', data)
+    io.emit('sensor/realtime', normalized)
   }
 }
 

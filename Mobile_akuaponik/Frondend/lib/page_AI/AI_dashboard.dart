@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:fl_chart/fl_chart.dart';
 import '../helper/app_theme.dart';
 import '../helper/config.dart';
+import '../helper/realtime_sockets.dart';
 import '../helper/navbar.dart';
 import '../helper/water_quality_reference.dart';
 import '../model/model_ekosistem.dart';
@@ -22,7 +23,7 @@ class WaterQualityDashboard extends StatefulWidget {
 
 class _WaterQualityDashboardState extends State<WaterQualityDashboard> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  Timer? _timer;
+  Timer? _historyTimer;
 
   Map<String, dynamic>? currentData;
   List<dynamic> historyData = [];
@@ -36,8 +37,43 @@ class _WaterQualityDashboardState extends State<WaterQualityDashboard> {
     AppConfig.apiUrlNotifier.addListener(_onApiUrlChanged);
     activeEcosystem.addListener(_onExternalChange);
     activePresetIndex.addListener(_onExternalChange);
+    smartfarmSocket.latestData.addListener(_onLiveData);
+    smartfarmSocket.isConnected.addListener(_onSocketStatusChanged);
 
-    _startPolling();
+    _bootstrap();
+  }
+
+  void _bootstrap() {
+    if (!AppConfig.isConfigured) {
+      setState(() {
+        isLoading = false;
+        _isOnline = false;
+        _notifyStatusChange(false);
+        errorMessage =
+            'Buka tab Setting dan masukkan IP server\n untuk koneksi ke perangkat';
+      });
+      return;
+    }
+
+    setState(() {
+      isLoading = currentData == null;
+      errorMessage = '';
+    });
+
+    smartfarmSocket.connect();
+    _fetchHistory();
+    _restartHistoryPolling();
+
+    Future.delayed(const Duration(seconds: 10), () {
+      if (!mounted) return;
+      if (!smartfarmSocket.isConnected.value && currentData == null) {
+        setState(() {
+          isLoading = false;
+          errorMessage =
+              'Server tidak merespons Silahkan Periksa IP: ${AppConfig.apiUrl}';
+        });
+      }
+    });
   }
 
   void _onApiUrlChanged() {
@@ -50,108 +86,84 @@ class _WaterQualityDashboardState extends State<WaterQualityDashboard> {
       _isOnline = false;
       _notifyStatusChange(false);
     });
-    _restartPolling();
+    _historyTimer?.cancel();
+    _bootstrap();
   }
 
   void _onExternalChange() {
     if (mounted) setState(() {});
   }
 
+  void _onLiveData() {
+    if (!mounted) return;
+    final data = smartfarmSocket.latestData.value;
+    if (data == null) return;
+    setState(() {
+      currentData = data;
+      isLoading = false;
+      _isOnline = true;
+      _notifyStatusChange(true);
+      errorMessage = '';
+    });
+  }
+
+  void _onSocketStatusChanged() {
+    if (!mounted) return;
+    final connected = smartfarmSocket.isConnected.value;
+    setState(() => _isOnline = connected);
+    _notifyStatusChange(connected);
+  }
+
   void _notifyStatusChange(bool isOnline) {
     widget.onOnlineStatusChanged?.call(isOnline);
   }
 
-  void _startPolling() {
-    fetchData();
-    _timer = Timer.periodic(const Duration(seconds: 5), (_) => fetchData());
-  }
-
-  void _restartPolling() {
-    _timer?.cancel();
-    _startPolling();
+  void _restartHistoryPolling() {
+    _historyTimer?.cancel();
+    _historyTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _fetchHistory(),
+    );
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _historyTimer?.cancel();
     AppConfig.apiUrlNotifier.removeListener(_onApiUrlChanged);
+    smartfarmSocket.latestData.removeListener(_onLiveData);
+    smartfarmSocket.isConnected.removeListener(_onSocketStatusChanged);
     activeEcosystem.removeListener(_onExternalChange);
     activePresetIndex.removeListener(_onExternalChange);
     super.dispose();
   }
 
-  Future<void> fetchData() async {
-    if (!AppConfig.isConfigured) {
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-          _isOnline = false;
-          _notifyStatusChange(false);
-          errorMessage =
-              'Buka tab Setting dan masukkan IP server\n untuk koneksi ke perangkat';
-        });
-      }
-      return;
-    }
+  Future<void> _fetchHistory() async {
+    if (!AppConfig.isConfigured) return;
 
     try {
-      final results = await Future.wait([
-        http
-            .get(Uri.parse('${AppConfig.apiUrl}/api/current'))
-            .timeout(const Duration(seconds: 5)),
-        http
-            .get(Uri.parse('${AppConfig.apiUrl}/api/history'))
-            .timeout(const Duration(seconds: 5)),
-      ]);
+      final historyResponse = await http
+          .get(Uri.parse('${AppConfig.apiUrl}/api/history'))
+          .timeout(const Duration(seconds: 5));
 
-      final currentResponse = results[0];
-      final historyResponse = results[1];
-
-      if (currentResponse.statusCode == 200 &&
-          historyResponse.statusCode == 200) {
+      if (historyResponse.statusCode == 200) {
         if (mounted) {
           setState(() {
-            currentData = json.decode(currentResponse.body);
             historyData = json.decode(historyResponse.body);
-            isLoading = false;
-            _isOnline = true;
-            _notifyStatusChange(true);
-            errorMessage = '';
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            errorMessage =
-                'Server error (${currentResponse.statusCode}). Periksa backend.';
-            isLoading = false;
-            _isOnline = false;
-            _notifyStatusChange(false);
           });
         }
       }
-    } on TimeoutException {
-      if (mounted) {
-        setState(() {
-          errorMessage =
-              'server tidak merespons Silahkan Periksa IP: ${AppConfig.apiUrl}';
-          isLoading = false;
-          _isOnline = false;
-          _notifyStatusChange(false);
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          errorMessage =
-              'Koneksi gagal.\nPastikan HP dan Raspberry Pi di jaringan yang sama.\n'
-              'Server: ${AppConfig.apiUrl}';
-          isLoading = false;
-          _isOnline = false;
-          _notifyStatusChange(false);
-        });
-      }
+    } catch (_) {
+      // Diamkan — status koneksi utama sudah tercermin lewat socket real-time.
     }
+  }
+
+  Future<void> fetchData() async {
+    if (!AppConfig.isConfigured) {
+      _bootstrap();
+      return;
+    }
+    smartfarmSocket.connect();
+    await _fetchHistory();
   }
 
   Color getStatusColor(String status) {
@@ -259,7 +271,7 @@ class _WaterQualityDashboardState extends State<WaterQualityDashboard> {
             if (isNotConfigured)
               ElevatedButton.icon(
                 onPressed: () {
-                  MainNavigation.goToTab(4);
+                  MainNavigation.goToTab(2);
                 },
                 icon: const Icon(
                   Icons.settings_rounded,
