@@ -34,12 +34,11 @@ import {
 import { initServer, publishSensorData, closeServer } from './express-api'
 // Redis Cache: menyimpan data sensor real-time (TTL 1 jam) untuk stream mobile
 import { initRedisCache, closeRedisCache } from './redis-cache'
-// Power Manager: fitur ON/OFF tampilan aplikasi 
+// Power Manager: fitur ON/OFF tampilan aplikasi
 import { initPowerManager, cleanupPowerManager, hideApp, isAppVisible } from './power-manager'
 
 // --- Data Logging Interval ---
-// We receive data every ~2 seconds from the MCU, but we only save to DB
-// at a configurable interval to prevent database bloat.
+// We receive data every ~2 seconds from the MCU, but we only save to DB at a configurable interval to prevent database bloat.
 let logIntervalMinutes = 1 // Default: save every 1 minute
 let lastLogTimestamp = 0
 let mainWindow: BrowserWindow | null = null
@@ -61,7 +60,7 @@ function createWindow(): void {
     }
   })
   mainWindow = win
-  
+
   win.on('ready-to-show', () => {
     if (process.platform === 'linux') {
       win.maximize()
@@ -82,9 +81,7 @@ function createWindow(): void {
   }
 }
 
-// =====================================================
 // Register IPC Handlers
-// =====================================================
 function registerIpcHandlers(): void {
   // ----- Serial Port Handlers -----
 
@@ -125,7 +122,7 @@ function registerIpcHandlers(): void {
     return getLogsByDateRange(startDate, endDate)
   })
 
-    // Get total log count
+  // Get total log count
   ipcMain.handle('db:get-log-count', () => {
     return getLogCount()
   })
@@ -151,8 +148,7 @@ function registerIpcHandlers(): void {
   // ----- System Handlers -----
 
   /**
-   * Get the current WiFi/LAN IP address
-   * Prioritizes wlan0 (Raspberry Pi WiFi), then eth0, then any non-internal IPv4
+   * Get the current WiFi/LAN IP address Prioritizes wlan0 (Raspberry Pi WiFi), then eth0, then any non-internal IPv4
    */
   ipcMain.handle('system:get-network-ip', () => {
     const nets = networkInterfaces()
@@ -197,10 +193,6 @@ function registerIpcHandlers(): void {
 
   // ----- Power (ON/OFF Tampilan Aplikasi) Handler -----
 
-  /**
-   * Matikan TAMPILAN aplikasi (bukan quit). Proses background — pembacaan
-   * serial, logging ke database, server untuk mobile — tetap berjalan.
-   */
   ipcMain.handle('power:turn-off', async () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       return { success: false }
@@ -448,9 +440,7 @@ function registerIpcHandlers(): void {
   })
 }
 
-// =====================================================
 // App Lifecycle
-// =====================================================
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.aquaphonik.desktop')
 
@@ -474,8 +464,7 @@ app.whenReady().then(async () => {
   // Create the main window
   createWindow()
 
-  // power manager: tray icon, shortcut (ctrl+alt+p) 
-  // dan perangkat fisik saklar GPIO pada power-manager.ts
+  // power manager: tray icon, shortcut (ctrl+alt+p) dan perangkat fisik saklar GPIO pada power-manager.ts
   initPowerManager(() => mainWindow)
 
   app.on('activate', function () {

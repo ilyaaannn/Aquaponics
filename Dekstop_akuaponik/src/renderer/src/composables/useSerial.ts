@@ -13,17 +13,45 @@ export interface PortInfo {
   productId?: string
 }
 
+// ── Singleton connection state, shared across every useSerial() caller ──
+const isConnected = ref(false)
+const currentPort = ref('')
+const lastError = ref('')
+
+// ── Reference-counted IPC listener registration ──
+let listenerRefCount = 0
+let unsubscribeStatusChange: (() => void) | null = null
+let unsubscribeError: (() => void) | null = null
+
+function acquireListeners(): void {
+  listenerRefCount++
+  if (listenerRefCount === 1) {
+    unsubscribeStatusChange = window.api.serial.onStatusChange((status) => {
+      isConnected.value = status.connected
+      currentPort.value = status.port
+    })
+    unsubscribeError = window.api.serial.onError((error) => {
+      lastError.value = error.message
+    })
+  }
+}
+
+function releaseListeners(): void {
+  listenerRefCount = Math.max(0, listenerRefCount - 1)
+  if (listenerRefCount === 0) {
+    unsubscribeStatusChange?.()
+    unsubscribeError?.()
+    unsubscribeStatusChange = null
+    unsubscribeError = null
+  }
+}
+
 export function useSerial() {
-  const isConnected = ref(false)
-  const currentPort = ref('')
   const availablePorts = ref<PortInfo[]>([])
   const isScanning = ref(false)
   const isConnecting = ref(false)
-  const lastError = ref('')
 
-  /**
-   * Scan for available serial ports
-   */
+  /** Scan for available serial ports */
   async function scanPorts(): Promise<void> {
     isScanning.value = true
     lastError.value = ''
@@ -36,9 +64,7 @@ export function useSerial() {
     }
   }
 
-  /**
-   * Connect to a port
-   */
+  /** Connect to a port */
   async function connect(portPath: string, baudRate: number = 115200): Promise<boolean> {
     isConnecting.value = true
     lastError.value = ''
@@ -59,9 +85,7 @@ export function useSerial() {
     }
   }
 
-  /**
-   * Disconnect from the current port
-   */
+  /** Disconnect from the current port */
   async function disconnect(): Promise<void> {
     try {
       await window.api.serial.disconnect()
@@ -72,9 +96,7 @@ export function useSerial() {
     }
   }
 
-  /**
-   * Send a command to the microcontroller
-   */
+  /** Send a command to the microcontroller */
   async function sendCommand(command: string): Promise<boolean> {
     try {
       const result = await window.api.serial.sendCommand(command)
@@ -88,20 +110,8 @@ export function useSerial() {
     }
   }
 
-  // Listen for status changes from the main process
-  function setupListeners(): void {
-    window.api.serial.onStatusChange((status) => {
-      isConnected.value = status.connected
-      currentPort.value = status.port
-    })
-
-    window.api.serial.onError((error) => {
-      lastError.value = error.message
-    })
-  }
-
   onMounted(async () => {
-    setupListeners()
+    acquireListeners()
     // Check current status on mount
     try {
       const status = await window.api.serial.getStatus()
@@ -113,7 +123,7 @@ export function useSerial() {
   })
 
   onUnmounted(() => {
-    window.api.serial.removeAllListeners()
+    releaseListeners()
   })
 
   return {

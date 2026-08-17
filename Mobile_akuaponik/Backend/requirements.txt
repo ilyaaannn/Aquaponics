@@ -1,15 +1,27 @@
 #  Dependensi Python tambahan untuk Firebase Admin SDK
 #  Jalankan: pip install -r requirements_additions.txt
+
+# Web framework
 flask
 flask-cors
 flask-socketio
+simple-websocket
+
+# Socket.IO CLIENT 
+python-socketio[client]
+requests
+
+# Basis data
 redis
 psycopg2-binary
+
+# Machine learning
 pandas
 numpy
 joblib
 scikit-learn==1.6.1
+
+# lainnya
 firebase-admin
 google-auth
-RPi.GPIO
-pyserial
+pytz

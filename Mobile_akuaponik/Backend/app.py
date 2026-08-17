@@ -1,6 +1,8 @@
 from flask import Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
+import socketio as sio_client_lib  
+import os
 import redis
 import psycopg2
 from psycopg2 import pool as psycopg2_pool
@@ -19,7 +21,7 @@ from water_quality_reference import (
     evaluate_all,
 )
 
-# ✅ DEFINISIKAN ZONA WAKTU DI SINI (SEBELUM DIGUNAKAN)
+# DEFINISIKAN ZONA WAKTU 
 JAKARTA_TZ = pytz.timezone('Asia/Jakarta')
 
 def get_jakarta_time():
@@ -72,13 +74,13 @@ redis_client = redis.Redis(
 )
 
 # Variabel retensi & waktu
-DATA_BUFFER = []      # Buffer penampung data 5 detik sebelum diagregasi jadi 5 menit
-BUFFER_MAX_SIZE = 60      # 60 data (5 menit / interval 5 detik)
+DATA_BUFFER = []
+BUFFER_MAX_SIZE = 200
 TTL = 3600        # 1 jam — data riwayat sensor di Redis
 TTL_NOTIF = 7*24*3600   # 7 hari — riwayat notifikasi
 TTL_FCM_TOKEN = 30*24*3600  # 30 hari — retensi token FCM
-UPDATE_INTERVAL = 5           # 5 detik — polling real-time
 DB_SAVE_INTERVAL = 300         # 5 menit — simpan hasil agregasi ke PostgreSQL
+DESKTOP_SOCKET_URL = os.environ.get('DESKTOP_SOCKET_URL', 'http://localhost:8000')
 WARNING_STATUSES = {'bahaya'}
 CONSECUTIVE_THRESHOLD = 3
 NOTIFICATION_COOLDOWN_MAX = 10*60
@@ -365,156 +367,154 @@ def classify_average(agg: dict) -> tuple:
     return status, confidence
 
 
-def generate_sensor_data():
+desktop_socket = sio_client_lib.Client(
+    reconnection=True,
+    reconnection_attempts=0,   
+    reconnection_delay=2,
+    reconnection_delay_max=15,
+)
+
+last_db_save_time = time.time()
+
+
+@desktop_socket.event
+def connect():
+    print(f"[SOCKET-CLIENT] ✓ Terhubung ke server Desktop di {DESKTOP_SOCKET_URL}")
+
+
+@desktop_socket.event
+def connect_error(data):
+    print(f"[SOCKET-CLIENT] ✗ Gagal konek ke {DESKTOP_SOCKET_URL}: {data}")
+
+
+@desktop_socket.event
+def disconnect():
+    print("[SOCKET-CLIENT] Terputus dari server Desktop — auto-reconnect aktif...")
+
+
+@desktop_socket.on('sensor/realtime')
+def on_sensor_realtime(payload: dict):
+    handle_incoming_sensor_data(payload)
+
+
+def handle_incoming_sensor_data(raw: dict) -> None:
     global DATA_BUFFER
-    last_db_save_time = time.time()
-    print("[DATA ENGINE] Menjalankan engine hibrida dua database...")
+
+    try:
+        do_value = raw.get('do_value', raw.get('do'))
+        params = {
+            'DO(mg/l)': float(do_value or 0),
+            'pH(ph_units)': float(raw.get('ph', 0) or 0),
+            'TDS(ppm)': float(raw.get('tds', 0) or 0),
+            'Temp(cel)': float(raw.get('temp_water', 0) or 0),
+        }
+
+        # === Prediksi KNN ===
+        ordered = [params[col] for col in feature_columns]
+        features_scaled = scaler.transform([ordered])
+        status = model.predict(features_scaled)[0]
+        proba = model.predict_proba(features_scaled)[0]
+        confidence = float(max(proba) * 100)
+
+        timestamp_jkt = get_jakarta_time()
+        data = {
+            'timestamp': timestamp_jkt.isoformat(),
+            'status': status,
+            'confidence': confidence,
+            'sensor_valid': True,
+            'parameters': params,
+        }
+
+        print(f"[{timestamp_jkt.strftime('%H:%M:%S')}] PUSH: Status: {status} | DO: {params['DO(mg/l)']} | pH: {params['pH(ph_units)']} | TDS: {params['TDS(ppm)']} | Temp: {params['Temp(cel)']}")
+
+        # === Distribusi ke Redis & WebSocket (klien mobile) ===
+        redis_client.set('current_water_data', json.dumps(data), ex=TTL)
+        history_key = "water_sensor_history"
+        redis_client.lpush(history_key, json.dumps(data))
+        redis_client.ltrim(history_key, 0, 3600)
+        redis_client.expire(history_key, TTL)
+
+        socketio.emit('water_data_update', data)
+
+        # Cek notifikasi bahaya
+        try:
+            check_and_send_notification(status, data)
+        except Exception as notif_err:
+            print(f"[ERROR NOTIF] {notif_err}")
+
+        # Tampung data ke buffer untuk agregasi
+        DATA_BUFFER.append(data)
+        if len(DATA_BUFFER) > BUFFER_MAX_SIZE:
+            DATA_BUFFER = DATA_BUFFER[-BUFFER_MAX_SIZE:]
+
+        _maybe_save_aggregate()
+
+    except Exception as e:
+        print(f"[ERROR] handle_incoming_sensor_data: {e}")
+
+
+def _maybe_save_aggregate() -> None:
+    """Simpan rata-rata 5 menit ke tabel water_history."""
+    global last_db_save_time, DATA_BUFFER
+
+    current_time = time.time()
+    if current_time - last_db_save_time < DB_SAVE_INTERVAL:
+        return
+
+    if not DATA_BUFFER:
+        print("[DATA ENGINE ⚠] Buffer kosong — tidak ada data untuk diagregasi.")
+        last_db_save_time = current_time
+        return
+
+    agg = aggregate_buffer(DATA_BUFFER)
+    avg_status, avg_confidence = classify_average(agg)
+    print(f"--- status={avg_status} ({round(avg_confidence, 1)}%) — "
+          f"menyimpan ke tabel water_history ({len(DATA_BUFFER)} sampel) ---")
 
     conn = None
-    cursor = None
-
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        print("[DATA ENGINE ✓] Terhubung ke database aquaphonik.")
-        ensure_table_exists()
-        
-    except Exception as err:
-        print(f"[DATA ENGINE ✗] Gagal terhubung ke database aquaphonik: {err}")
+        save_time = get_jakarta_time()
+        cursor.execute(
+            """
+            INSERT INTO water_history
+            (created_at, water_Temp, water_pH, disolved_oxg, TDS, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (save_time,
+             round(agg['temp_avg'], 3),
+             round(agg['ph_avg'], 3),
+             round(agg['do_avg'], 3),
+             int(round(agg['tds_avg'])),
+             avg_status)
+        )
+        conn.commit()
+        cursor.close()
+        print("[DB WRITE ✓] Data rata-rata 5 menit berhasil disimpan.")
+    except Exception as db_write_err:
+        print(f"[DB WRITE ✗] Gagal menyimpan: {db_write_err}")
+        if conn:
+            conn.rollback()
+    finally:
         if conn:
             return_db_connection(conn)
-        return
 
+    last_db_save_time = current_time
+    DATA_BUFFER = []
+
+
+def start_desktop_socket_client() -> None:
+    """Loop koneksi client Socket.IO ke server Desktop."""
     while True:
         try:
-            # === LANGKAH 1: Ambil baris data sensor terbaru ===
-            cursor.execute(
-                """
-                SELECT id, temp_water, ph, tds, do_value, timestamp
-                FROM sensor_logs ORDER BY timestamp DESC LIMIT 1
-                """
-            )
-            row = cursor.fetchone()
-
-            if row:
-                db_id, temp_water, ph, tds, do_value, timestamp = row
-
-                # Konversi timestamp ke zona Jakarta
-                if isinstance(timestamp, datetime):
-                    if timestamp.tzinfo is None:
-                        timestamp = pytz.UTC.localize(timestamp)
-                    timestamp_jkt = timestamp.astimezone(JAKARTA_TZ)
-                else:
-                    timestamp_jkt = get_jakarta_time()
-                
-                # === LANGKAH 2: Petakan parameter ===
-                params = {
-                    'DO(mg/l)': float(do_value or 0),
-                    'pH(ph_units)': float(ph or 0),
-                    'TDS(ppm)': float(tds or 0),
-                    'Temp(cel)': float(temp_water or 0),
-                }
-
-                # === LANGKAH 3: Prediksi KNN ===
-                ordered = [params[col] for col in feature_columns]
-                features_scaled = scaler.transform([ordered])
-                status = model.predict(features_scaled)[0]
-                proba = model.predict_proba(features_scaled)[0]
-                confidence = float(max(proba) * 100)
-
-                # Bentuk objek data dengan timestamp Jakarta
-                data = {
-                    'timestamp': timestamp_jkt.isoformat(),
-                    'status': status,
-                    'confidence': confidence,
-                    'sensor_valid': True,
-                    'parameters': params,
-                }
-
-                # Log dengan waktu Jakarta
-                print(f"[{timestamp_jkt.strftime('%H:%M:%S')}] READ: Status: {status} | DO: {params['DO(mg/l)']} | pH: {params['pH(ph_units)']} | TDS: {params['TDS(ppm)']} | Temp: {params['Temp(cel)']}")
-
-                # === LANGKAH 4: Distribusi ke Redis & WebSocket ===
-                redis_client.set('current_water_data', json.dumps(data), ex=TTL)
-                history_key = "water_sensor_history"
-                redis_client.lpush(history_key, json.dumps(data))
-                redis_client.ltrim(history_key, 0, 3600)
-                redis_client.expire(history_key, TTL)
-
-                socketio.emit('water_data_update', data)
-
-                # Cek notifikasi bahaya
-                try:
-                    check_and_send_notification(status, data)
-                except Exception as notif_err:
-                    print(f"[ERROR NOTIF] {notif_err}")
-
-                # Tampung data ke buffer untuk agregasi
-                DATA_BUFFER.append(data)
-                if len(DATA_BUFFER) > BUFFER_MAX_SIZE:
-                    DATA_BUFFER = DATA_BUFFER[-BUFFER_MAX_SIZE:]
-
-                # === LANGKAH 5: Simpan agregasi 5 menit ===
-                current_time = time.time()
-                if current_time - last_db_save_time >= DB_SAVE_INTERVAL:
-                    if DATA_BUFFER:
-                        agg = aggregate_buffer(DATA_BUFFER)
-                        avg_status, avg_confidence = classify_average(agg)
-                        print(f"--- status={avg_status} ({round(avg_confidence,1)}%) — menyimpan ke tabel water_history ---")
-                        try:
-                            save_time = get_jakarta_time()
-                            cursor.execute(
-                                """
-                                INSERT INTO water_history
-                                (created_at, water_Temp, water_pH, disolved_oxg, TDS, status)
-                                VALUES (%s, %s, %s, %s, %s, %s)
-                                """,
-                                (save_time,
-                                 round(agg['temp_avg'], 3),
-                                 round(agg['ph_avg'], 3),
-                                 round(agg['do_avg'], 3),
-                                 int(round(agg['tds_avg'])),
-                                 avg_status)
-                            )
-                            conn.commit()
-                            print("[DB WRITE ✓] Data rata-rata 5 menit berhasil disimpan.")
-                        except Exception as db_write_err:
-                            print(f"[DB WRITE ✗] Gagal menyimpan: {db_write_err}")
-                            conn.rollback()
-                    else:
-                        print("[DATA ENGINE ⚠] Buffer kosong — tidak ada data untuk diagregasi.")
-                    last_db_save_time = current_time
-                    DATA_BUFFER = []
-                time.sleep(UPDATE_INTERVAL)
-            else:
-                print("[DATA ENGINE ⚠] Tabel sensor_logs kosong. Menunggu data masuk...")
-                time.sleep(UPDATE_INTERVAL)  
-
+            if not desktop_socket.connected:
+                desktop_socket.connect(DESKTOP_SOCKET_URL, wait_timeout=10)
+            desktop_socket.wait()
         except Exception as e:
-            print(f"[ERROR MAIN LOOP] generate_sensor_data: {e}")
-            time.sleep(2)
-            try:
-                if conn:
-                    conn.rollback()
-                if cursor:
-                    cursor.close()
-                if conn:
-                    return_db_connection(conn)
-                conn = get_db_connection()
-                cursor = conn.cursor()
-            except Exception as reconnect_err:
-                print(f"[ERROR] Gagal reconnect: {reconnect_err}")
-
-    # Cleanup
-    if cursor:
-        cursor.close()
-    if conn:
-        return_db_connection(conn)
-
-
-# Jalankan thread data engine
-data_thread = threading.Thread(target=generate_sensor_data, daemon=True)
-data_thread.start()
+            print(f"[SOCKET-CLIENT] Gagal konek ke {DESKTOP_SOCKET_URL}: {e} "
+                  f"— coba lagi 5 detik lagi...")
+            time.sleep(5)
 
 
 # Buat blueprint API
@@ -557,7 +557,6 @@ if __name__ == '__main__':
     print("  GET    /api/history              — History 1 jam")
     print("  GET    /api/stats                — Statistik")
     print("  GET    /api/health               — Health check")
-    print("  [INFO] Kontrol aktuator kini via Socket.IO server Desktop, bukan di sini")
     print("  GET    /api/notifications        — History notifikasi bahaya")
     print("  DELETE /api/notifications/clear  — Hapus semua notifikasi")
     print("  DELETE /api/notifications/clean  — Hapus notifikasi > 7 hari")
@@ -567,10 +566,15 @@ if __name__ == '__main__':
     print("  POST   /api/fcm/send             — Kirim notifikasi manual")
     print("")
     print(f"Timezone         : Asia/Jakarta (UTC+7)")
-    print(f"Update Interval  : {UPDATE_INTERVAL}s")
+    print(f"Sumber Data      : Push via Socket.IO dari {DESKTOP_SOCKET_URL} event 'sensor/realtime'.")
     print(f"DB Save Interval : {DB_SAVE_INTERVAL}s ({DB_SAVE_INTERVAL // 60} menit)")
     print(f"Notif Threshold  : {CONSECUTIVE_THRESHOLD}x berturut-turut")
     print(f"Notif Cooldown   : {NOTIFICATION_COOLDOWN_MAX // 60} menit")
     print(f"Firebase         : {'✓ Aktif' if FIREBASE_ENABLED else '✗ Tidak Aktif'}")
     print("=" * 60)
+
+    ensure_table_exists()
+    socket_client_thread = threading.Thread(target=start_desktop_socket_client, daemon=True)
+    socket_client_thread.start()
+
     socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)

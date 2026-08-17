@@ -14,9 +14,9 @@ interface SerialAPI {
   disconnect: () => Promise<{ success: boolean; message: string }>
   sendCommand: (command: string) => Promise<{ success: boolean; message: string }>
   getStatus: () => Promise<{ connected: boolean; port: string }>
-  onData: (callback: (data: Record<string, number>) => void) => void
-  onStatusChange: (callback: (status: { connected: boolean; port: string }) => void) => void
-  onError: (callback: (error: { message: string }) => void) => void
+  onData: (callback: (data: Record<string, number>) => void) => () => void
+  onStatusChange: (callback: (status: { connected: boolean; port: string }) => void) => () => void
+  onError: (callback: (error: { message: string }) => void) => () => void
   removeAllListeners: () => void
 }
 

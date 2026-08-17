@@ -1,7 +1,6 @@
 /**
  * Aquaphonik Desktop — Preload Script
- * Securely exposes Electron IPC APIs to the Vue renderer process
- * via contextBridge.
+ * Securely exposes Electron IPC APIs to the Vue renderer process via contextBridge.
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
@@ -41,22 +40,31 @@ const aquaphonikAPI = {
     getStatus: (): Promise<{ connected: boolean; port: string }> =>
       ipcRenderer.invoke('serial:get-status'),
 
-    /** Listen for incoming sensor data from serial */
-    onData: (callback: (data: Record<string, number>) => void): void => {
-      ipcRenderer.on('serial:data', (_event, data) => callback(data))
+    /** Listen for incoming sensor data from serial. */
+    onData: (callback: (data: Record<string, number>) => void): (() => void) => {
+      const listener = (_event: unknown, data: Record<string, number>): void => callback(data)
+      ipcRenderer.on('serial:data', listener)
+      return () => ipcRenderer.removeListener('serial:data', listener)
     },
 
-    /** Listen for serial status changes */
-    onStatusChange: (callback: (status: { connected: boolean; port: string }) => void): void => {
-      ipcRenderer.on('serial:status', (_event, status) => callback(status))
+    /** Listen for serial status changes. Returns an unsubscribe function (see onData). */
+    onStatusChange: (
+      callback: (status: { connected: boolean; port: string }) => void
+    ): (() => void) => {
+      const listener = (_event: unknown, status: { connected: boolean; port: string }): void =>
+        callback(status)
+      ipcRenderer.on('serial:status', listener)
+      return () => ipcRenderer.removeListener('serial:status', listener)
     },
 
-    /** Listen for serial errors */
-    onError: (callback: (error: { message: string }) => void): void => {
-      ipcRenderer.on('serial:error', (_event, error) => callback(error))
+    /** Listen for serial errors. Returns an unsubscribe function (see onData). */
+    onError: (callback: (error: { message: string }) => void): (() => void) => {
+      const listener = (_event: unknown, error: { message: string }): void => callback(error)
+      ipcRenderer.on('serial:error', listener)
+      return () => ipcRenderer.removeListener('serial:error', listener)
     },
 
-    /** Remove all serial listeners */
+    /** Remove EVERY serial listener on all three channels */
     removeAllListeners: (): void => {
       ipcRenderer.removeAllListeners('serial:data')
       ipcRenderer.removeAllListeners('serial:status')

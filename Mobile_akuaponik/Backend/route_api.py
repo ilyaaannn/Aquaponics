@@ -5,11 +5,8 @@ import pytz
 
 # Set zona waktu Asia/Jakarta
 JAKARTA_TZ = pytz.timezone('Asia/Jakarta')
-
 def get_jakarta_time():
     return datetime.now(JAKARTA_TZ)
-
-
 def format_jakarta_iso(dt):
     if dt.tzinfo is None:
         dt = JAKARTA_TZ.localize(dt)
@@ -192,13 +189,6 @@ def create_api_blueprint(
                 return_db_conn(conn)
 
 
-    # -------------------------------------------------
-    # CATATAN ARSITEKTUR (Opsi A):
-    # Kontrol aktuator (aerator/pompa air) TIDAK lagi lewat server Python ini.
-    # Mobile app mengirim perintah langsung ke server Desktop (Electron) via
-    # Socket.IO event 'actuator/command', karena server Desktop-lah yang
-    # memegang koneksi serial fisik ke Arduino. Server Python di sini murni
-    # untuk pembacaan AI/histori kualitas air.
     # -------------------------------------------------
     # NOTIFIKASI
     @api_bp.route('/api/notifications', methods=['GET'])

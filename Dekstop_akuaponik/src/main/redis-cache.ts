@@ -1,16 +1,6 @@
 /**
  * Redis Cache — Aquaphonik Desktop
- *
  * Menyimpan data sensor real-time (yang datang dari kabel USB tiap ~2 detik)
- * ke Redis, agar:
- *  1. Klien mobile yang baru terkoneksi via Socket.IO langsung mendapat nilai
- *     terakhir tanpa menunggu siklus kirim berikutnya.
- *  2. Endpoint REST /api/current & /api/health punya sumber data yang cepat
- *     (tidak perlu query PostgreSQL untuk data live).
- *
- * TTL disamakan dengan sisi Python (server Smartfarm): 1 jam (3600 detik).
- * Key diberi prefix "desktop_" supaya tidak bentrok dengan key milik server
- * Python (mis. "current_water_data") walau berbagi instance Redis yang sama.
  */
 
 import { createClient, RedisClientType } from 'redis'
@@ -25,12 +15,7 @@ const HISTORY_KEY = 'desktop_sensor_history'
 let client: RedisClientType | null = null
 let isReady = false
 
-/**
- * Arduino mengirim key "do" (lihat aquaponik.ino: doc["do"] = doValue), tapi
- * kolom Postgres & model Flutter (kDesktopParams) memakai nama "do_value".
- * Normalisasi di sini supaya payload live stream (Socket.IO/Redis) konsisten
- * dengan payload REST /api/history yang berasal dari Postgres.
- */
+/// Normalisasi value do ke do_value
 export function normalizeSensorPayload(
   raw: Record<string, unknown>
 ): Record<string, unknown> {
@@ -65,10 +50,7 @@ export async function initRedisCache(): Promise<void> {
   }
 }
 
-/**
- * Simpan 1 pembacaan sensor ke Redis (nilai terkini + histori), masing-masing
- * dengan TTL 1 jam. Dipanggil setiap kali data baru masuk dari serial (~2 detik).
- */
+/** Simpan 1 pembacaan sensor ke Redis (nilai terkini + histori) */
 export async function cacheSensorData(data: Record<string, unknown>): Promise<void> {
   if (!client || !isReady) return
 

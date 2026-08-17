@@ -1,4 +1,3 @@
-// dekstop_home.dart
 import 'package:flutter/material.dart';
 import '../helper/app_theme.dart';
 import '../helper/desktop_config.dart';

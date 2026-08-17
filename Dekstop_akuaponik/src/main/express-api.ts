@@ -20,12 +20,14 @@ export function initServer(): void {
   const app = express()
   // Trust proxy sangat penting jika berada di belakang Cloudflare Tunnel
   app.set('trust proxy', 1)
-  
-  app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  }))
+
+  app.use(
+    cors({
+      origin: '*',
+      methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
+      allowedHeaders: ['Content-Type', 'Authorization']
+    })
+  )
   app.use(express.json())
 
   // --- Health check — dipakai tombol "Tes Ulang" di halaman Setting Flutter ---
@@ -103,8 +105,7 @@ export function initServer(): void {
   io.on('connection', (socket) => {
     console.log(`🔌 [Socket.IO] Klien terhubung: ${socket.id}`)
 
-    // Kirim data terakhir dari cache Redis begitu client connect, agar mobile
-    // tidak perlu menunggu siklus kirim serial berikutnya (maks. 2 detik).
+    // Kirim data terakhir dari cache Redis begitu client connect
     getLatestCachedData()
       .then((data) => {
         if (data) socket.emit('sensor/realtime', data)
@@ -113,8 +114,7 @@ export function initServer(): void {
         /* cache belum tersedia, biarkan menunggu data pertama dari serial */
       })
 
-    // Mendengarkan perintah aktuator dari Flutter (Opsi A: kontrol langsung
-    // ke server Desktop ini, karena di sinilah koneksi serial fisik berada)
+    // Mendengarkan perintah aktuator dari Flutter
     socket.on('actuator/command', (payload: { command: string }) => {
       console.log(`📥 [Socket.IO] Perintah aktuator diterima:`, payload)
       if (payload && payload.command) {
@@ -133,17 +133,12 @@ export function initServer(): void {
   })
 }
 
-/**
- * Publish data sensor realtime melalui Socket.IO + simpan ke cache Redis (1 jam).
- * Dipanggil dari index.ts setiap kali ada data serial baru (~tiap 2 detik).
- */
+/** Publish data sensor realtime melalui Socket.IO + simpan ke cache Redis (1 jam). */
 export function publishSensorData(data: Record<string, number>): void {
   const normalized = normalizeSensorPayload(data)
 
   // Cache ke Redis (fire-and-forget — tidak menunda broadcast Socket.IO)
-  cacheSensorData(normalized).catch((err) =>
-    console.error('[Redis] Gagal cache data sensor:', err)
-  )
+  cacheSensorData(normalized).catch((err) => console.error('[Redis] Gagal cache data sensor:', err))
 
   if (io) {
     io.emit('sensor/realtime', normalized)
