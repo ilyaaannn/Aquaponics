@@ -9,6 +9,50 @@ class AppGuide {
 
   static const List<Map<String, dynamic>> helpItems = [
     {
+      'section': 'Mengenal Aplikasi',
+      'icon': Icons.hub_rounded,
+      'color': AppTheme.primaryGreen,
+      'title': 'Dua Server, Dua Fungsi Berbeda',
+      'desc':
+          'Aplikasi ini terhubung ke DUA server sekaligus: "Smartfarm" dan "Desktop". '
+          'Keduanya diatur terpisah di halaman Pengaturan dan bisa aktif bersamaan '
+          'tanpa saling mengganggu.',
+    },
+    {
+      'section': 'Mengenal Aplikasi',
+      'icon': Icons.psychology_rounded,
+      'color': Color(0xFF3B82F6),
+      'title': 'Server Smartfarm — Analisis AI',
+      'desc':
+          'Menyediakan status kualitas air hasil klasifikasi model Machine Learning (Ideal/'
+          'Normal/Bahaya), riwayat teragregasi, statistik, dan notifikasi push. '
+          'Server ini biasanya berjalan di layanan cloud/VPS sehingga bisa diakses '
+          'dari mana saja selama ada koneksi internet — cocok untuk pemantauan jarak jauh.',
+    },
+    {
+      'section': 'Mengenal Aplikasi',
+      'icon': Icons.computer_rounded,
+      'color': AppTheme.tdsColor,
+      'title': 'Server Desktop — Data Mentah dari Alat',
+      'desc':
+          'Menyediakan data sensor mentah langsung dari perangkat yang tersambung kabel USB '
+          'ke Arduino/ESP32 (tanpa diproses AI), riwayat lengkap dari database lokal, serta '
+          'kontrol manual Aerator dan Pompa Air. Berguna untuk analisis data asli oleh pembudidaya, '
+          'terpisah dari hasil klasifikasi AI.',
+    },
+    {
+      'section': 'Mengenal Aplikasi',
+      'icon': Icons.travel_explore_rounded,
+      'color': AppTheme.statusWarning,
+      'title': 'Bisakah Dipantau dari Jarak Jauh?',
+      'desc':
+          'Bisa. Server Smartfarm umumnya sudah bisa diakses dari luar rumah/kebun karena berjalan '
+          'di VPS. Server Desktop pada dasarnya berada di jaringan lokal alat, namun kini bisa '
+          'diakses jarak jauh juga bila pemilik sistem mengaktifkan domain/tunnel (mis. Cloudflare '
+          'Tunnel) untuknya — tanyakan ke pengelola sistem apakah domain jarak jauh untuk server '
+          'Desktop sudah tersedia.',
+    },
+    {
       'section': 'Dashboard',
       'icon': Icons.dashboard_rounded,
       'color': AppTheme.primaryGreen,
@@ -96,9 +140,22 @@ class AppGuide {
       'color': AppTheme.primaryGreen,
       'title': 'Konfigurasi Server',
       'desc':
-          'Masukkan IP address atau domain dan port Raspberry Pi, lalu ketuk "Hubungkan". '
-          'Pastikan ponsel dan Raspberry Pi berada di jaringan yang sama. '
-          'Status koneksi akan ditampilkan setelah aplikasi berhasil terhubung ke server.',
+          'Isi kartu "Server Smartfarm" dan/atau "Server Desktop" dengan alamat IP atau nama domain '
+          'beserta port-nya, lalu ketuk "Hubungkan". Kedua server diatur terpisah — Anda bisa '
+          'menghubungkan salah satu saja atau keduanya sekaligus. Status koneksi akan tampil '
+          'setelah aplikasi berhasil terhubung ke server.',
+    },
+    {
+      'section': 'Pengaturan',
+      'icon': Icons.lock_rounded,
+      'color': Color(0xFF3B82F6),
+      'title': 'HTTP vs HTTPS',
+      'desc':
+          'Setiap kartu server punya sakelar HTTP/HTTPS. Pilih "HTTP" jika mengakses lewat alamat '
+          'IP di jaringan lokal (mis. rumah/kebun yang sama dengan alat atau VPS tanpa SSL). '
+          'Pilih "HTTPS" jika mengakses lewat nama domain untuk pemantauan jarak jauh yang lebih '
+          'aman dan stabil (mis. domain VPS dengan SSL, atau domain Cloudflare Tunnel untuk server '
+          'Desktop). Kolom Port boleh dikosongkan bila domain HTTPS sudah memakai port standar (443).',
     },
     {
       'section': 'Pengaturan',

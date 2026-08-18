@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'app_theme.dart';
 import 'config.dart';
 import 'desktop_config.dart';
+import 'server_scheme.dart';
 import 'realtime_sockets.dart';
 import 'header.dart';
 import 'guide.dart';
@@ -17,31 +18,28 @@ class SettingPage extends StatefulWidget {
 }
 
 class _SettingPageState extends State<SettingPage> {
-  // ────────────────────────────────────────────────────────────────────
   // SERVER SMARTFARM (AI) — AppConfig, REST, default port 5000
-  // ────────────────────────────────────────────────────────────────────
   final TextEditingController _smartfarmIpController = TextEditingController();
   final TextEditingController _smartfarmPortController =
       TextEditingController();
   String _smartfarmStatus = 'Belum Terkonfigurasi';
   bool _smartfarmConnected = false;
   bool _smartfarmChecking = false;
+  bool _smartfarmUseHttps = false;
   String _smartfarmModel = '';
   String _smartfarmFirebase = '';
   int _smartfarmFcmTokenCount = 0;
 
-  // ────────────────────────────────────────────────────────────────────
   // SERVER DESKTOP (Kabel) — DesktopConfig, Socket.IO, default port 8000
-  // ────────────────────────────────────────────────────────────────────
   final TextEditingController _desktopIpController = TextEditingController();
   final TextEditingController _desktopPortController = TextEditingController();
   String _desktopStatus = 'Belum Terkonfigurasi';
   bool _desktopHealthOk = false;
   bool _desktopChecking = false;
+  bool _desktopUseHttps = false;
   String _desktopRedisStatus = '';
   String _desktopSerialStatus = '';
 
-  // Kontrol aktuator (dibaca dari data live server Desktop, bukan REST lagi)
   bool isAeratorOn = false;
   bool isPompaAirOn = false;
 
@@ -50,14 +48,20 @@ class _SettingPageState extends State<SettingPage> {
     super.initState();
 
     _smartfarmIpController.text = AppConfig.currentIp;
-    _smartfarmPortController.text = AppConfig.currentPort.toString();
+    _smartfarmPortController.text = AppConfig.currentPort > 0
+        ? AppConfig.currentPort.toString()
+        : '';
+    _smartfarmUseHttps = AppConfig.isHttps;
     AppConfig.apiUrlNotifier.addListener(_onSmartfarmUrlChanged);
     if (AppConfig.isConfigured) {
       _checkSmartfarmConnection(showDialog: false);
     }
 
     _desktopIpController.text = DesktopConfig.currentIp;
-    _desktopPortController.text = DesktopConfig.currentPort.toString();
+    _desktopPortController.text = DesktopConfig.currentPort > 0
+        ? DesktopConfig.currentPort.toString()
+        : '';
+    _desktopUseHttps = DesktopConfig.isHttps;
     DesktopConfig.apiUrlNotifier.addListener(_onDesktopUrlChanged);
     if (DesktopConfig.isConfigured) {
       desktopSocket.connect();
@@ -71,11 +75,14 @@ class _SettingPageState extends State<SettingPage> {
   void _onSmartfarmUrlChanged() {
     if (!mounted) return;
     final newIp = AppConfig.currentIp;
-    final newPort = AppConfig.currentPort.toString();
+    final newPort = AppConfig.currentPort > 0
+        ? AppConfig.currentPort.toString()
+        : '';
     if (_smartfarmIpController.text != newIp)
       _smartfarmIpController.text = newIp;
     if (_smartfarmPortController.text != newPort)
       _smartfarmPortController.text = newPort;
+    _smartfarmUseHttps = AppConfig.isHttps;
 
     if (AppConfig.isConfigured) {
       _checkSmartfarmConnection(showDialog: false);
@@ -93,10 +100,13 @@ class _SettingPageState extends State<SettingPage> {
   void _onDesktopUrlChanged() {
     if (!mounted) return;
     final newIp = DesktopConfig.currentIp;
-    final newPort = DesktopConfig.currentPort.toString();
+    final newPort = DesktopConfig.currentPort > 0
+        ? DesktopConfig.currentPort.toString()
+        : '';
     if (_desktopIpController.text != newIp) _desktopIpController.text = newIp;
     if (_desktopPortController.text != newPort)
       _desktopPortController.text = newPort;
+    _desktopUseHttps = DesktopConfig.isHttps;
 
     if (DesktopConfig.isConfigured) {
       desktopSocket.connect();
@@ -144,9 +154,7 @@ class _SettingPageState extends State<SettingPage> {
     super.dispose();
   }
 
-  // ────────────────────────────────────────────────────────────────────
   // SMARTFARM — cek koneksi & hubungkan
-  // ────────────────────────────────────────────────────────────────────
   Future<void> _checkSmartfarmConnection({bool showDialog = true}) async {
     if (!AppConfig.isConfigured) {
       setState(() {
@@ -211,18 +219,29 @@ class _SettingPageState extends State<SettingPage> {
 
   Future<void> _connectToSmartfarm() async {
     final ip = _smartfarmIpController.text.trim();
-    final port = int.tryParse(_smartfarmPortController.text.trim()) ?? 5000;
+    final portText = _smartfarmPortController.text.trim();
+    final port = portText.isEmpty ? 0 : (int.tryParse(portText) ?? 5000);
 
     if (ip.isEmpty) {
-      _showSnack('Masukkan IP address server terlebih dahulu.', success: false);
+      _showSnack(
+        'Masukkan IP address atau domain server terlebih dahulu.',
+        success: false,
+      );
       return;
     }
     if (!AppConfig.isValidIp(ip)) {
-      _showSnack('Format IP tidak valid. Contoh: 192.168.1.5', success: false);
+      _showSnack(
+        'Format IP/domain tidak valid. Contoh: 192.168.1.5 atau api.namadomain.com',
+        success: false,
+      );
       return;
     }
 
-    await AppConfig.setServerIp(ip, port: port);
+    await AppConfig.setServerIp(
+      ip,
+      port: port,
+      scheme: _smartfarmUseHttps ? ServerScheme.https : ServerScheme.http,
+    );
     setState(() {
       _smartfarmConnected = false;
       _smartfarmStatus = 'Menghubungkan...';
@@ -250,9 +269,7 @@ class _SettingPageState extends State<SettingPage> {
     _showSnack('Koneksi server Smartfarm telah diputuskan.', success: false);
   }
 
-  // ────────────────────────────────────────────────────────────────────
   // DESKTOP — cek koneksi & hubungkan
-  // ────────────────────────────────────────────────────────────────────
   Future<void> _checkDesktopConnection({bool showDialog = true}) async {
     if (!DesktopConfig.isConfigured) {
       setState(() {
@@ -318,21 +335,29 @@ class _SettingPageState extends State<SettingPage> {
 
   Future<void> _connectToDesktop() async {
     final ip = _desktopIpController.text.trim();
-    final port = int.tryParse(_desktopPortController.text.trim()) ?? 8000;
+    final portText = _desktopPortController.text.trim();
+    final port = portText.isEmpty ? 0 : (int.tryParse(portText) ?? 8000);
 
     if (ip.isEmpty) {
       _showSnack(
-        'Masukkan IP address server desktop terlebih dahulu.',
+        'Masukkan IP address atau domain server desktop terlebih dahulu.',
         success: false,
       );
       return;
     }
     if (!DesktopConfig.isValidIp(ip)) {
-      _showSnack('Format IP tidak valid. Contoh: 192.168.1.10', success: false);
+      _showSnack(
+        'Format IP/domain tidak valid. Contoh: 192.168.1.10 atau desktop.namadomain.com',
+        success: false,
+      );
       return;
     }
 
-    await DesktopConfig.setServerIp(ip, port: port);
+    await DesktopConfig.setServerIp(
+      ip,
+      port: port,
+      scheme: _desktopUseHttps ? ServerScheme.https : ServerScheme.http,
+    );
     setState(() {
       _desktopHealthOk = false;
       _desktopStatus = 'Menghubungkan...';
@@ -396,9 +421,7 @@ class _SettingPageState extends State<SettingPage> {
     );
   }
 
-  // ────────────────────────────────────────────────────────────────────
   // KONTROL AKTUATOR
-  // ────────────────────────────────────────────────────────────────────
   void _sendCommand(String device, bool state) {
     if (!DesktopConfig.isConfigured || !desktopSocket.isConnected.value) {
       _showSnack(
@@ -483,6 +506,9 @@ class _SettingPageState extends State<SettingPage> {
                       isChecking: _smartfarmChecking,
                       isConnected: _smartfarmConnected,
                       statusLabel: _smartfarmStatus,
+                      useHttps: _smartfarmUseHttps,
+                      onHttpsChanged: (val) =>
+                          setState(() => _smartfarmUseHttps = val),
                       onConnect: _connectToSmartfarm,
                       onDisconnect: _disconnectSmartfarm,
                       onRetest: () =>
@@ -505,6 +531,9 @@ class _SettingPageState extends State<SettingPage> {
                       isChecking: _desktopChecking,
                       isConnected: _desktopHealthOk,
                       statusLabel: _desktopStatus,
+                      useHttps: _desktopUseHttps,
+                      onHttpsChanged: (val) =>
+                          setState(() => _desktopUseHttps = val),
                       onConnect: _connectToDesktop,
                       onDisconnect: _disconnectDesktop,
                       onRetest: () => _checkDesktopConnection(showDialog: true),
@@ -561,6 +590,8 @@ class _SettingPageState extends State<SettingPage> {
     required bool isChecking,
     required bool isConnected,
     required String statusLabel,
+    required bool useHttps,
+    required ValueChanged<bool> onHttpsChanged,
     required VoidCallback onConnect,
     required VoidCallback onDisconnect,
     required VoidCallback onRetest,
@@ -617,10 +648,17 @@ class _SettingPageState extends State<SettingPage> {
                   const SizedBox(height: 8),
                   _buildTextField(
                     controller: portController,
-                    hint: portHint,
-                    label: 'Port',
+                    hint: useHttps
+                        ? 'opsional — kosongkan jika pakai domain HTTPS standar'
+                        : portHint,
+                    label: 'Port (opsional)',
                     icon: Icons.electrical_services_rounded,
                     keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildHttpsToggle(
+                    useHttps: useHttps,
+                    onChanged: onHttpsChanged,
                   ),
                   if (extraInfo != null) ...[
                     const SizedBox(height: 10),
@@ -678,6 +716,63 @@ class _SettingPageState extends State<SettingPage> {
                     ),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Toggle skema HTTP/HTTPS
+  Widget _buildHttpsToggle({
+    required bool useHttps,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return InkWell(
+      onTap: () => onChanged(!useHttps),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: (useHttps ? AppTheme.primaryGreen : Colors.grey).withOpacity(
+            0.08,
+          ),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: (useHttps ? AppTheme.primaryGreen : Colors.grey).withOpacity(
+              0.3,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              useHttps ? Icons.lock_rounded : Icons.lock_open_rounded,
+              size: 15,
+              color: useHttps ? AppTheme.primaryGreen : Colors.grey,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    useHttps
+                        ? 'HTTPS — untuk domain / akses jarak jauh'
+                        : 'HTTP — untuk IP lokal / VPS tanpa SSL',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textPrimary(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: useHttps,
+              onChanged: onChanged,
+              activeColor: AppTheme.primaryGreen,
             ),
           ],
         ),
